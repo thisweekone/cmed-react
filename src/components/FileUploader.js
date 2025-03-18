@@ -1,204 +1,325 @@
-import React, { useCallback, useState } from 'react';
-import { useDropzone } from 'react-dropzone';
-import { Alert, Button, Card, ProgressBar } from 'react-bootstrap';
-import { FiUpload, FiFile, FiCheckCircle } from 'react-icons/fi';
-import * as XLSX from 'xlsx';
+import React, { useState, useRef, useEffect } from 'react';
+import { Card, Button, Form, Alert, Spinner } from 'react-bootstrap';
 import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 
 const FileUploader = ({ onFileLoaded }) => {
-  const [error, setError] = useState(null);
+  const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [progress, setProgress] = useState(0);
-  const [fileInfo, setFileInfo] = useState(null);
+  const [workerInitialized, setWorkerInitialized] = useState(false);
+  const [fullDataBuffer, setFullDataBuffer] = useState([]);
+  const fileInputRef = useRef(null);
+  const workerRef = useRef(null);
+  const dataBufferRef = useRef([]);
 
-  // Função para processar os dados após eles serem carregados
-  const processData = useCallback((data, columns, file) => {
-    setProgress(90);
-    setFileInfo({
-      name: file.name,
-      size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
-      rows: data.length,
-      columns: columns.length
-    });
-    
-    setProgress(100);
-    setLoading(false);
-    
-    // Enviar dados para o componente pai
-    onFileLoaded(data, columns, file.name);
-  }, [onFileLoaded]);
+  // Inicializar Web Worker
+  useEffect(() => {
+    // Função para criar o código do worker como Blob
+    const createWorkerBlob = () => {
+      const workerCode = `
+        // Worker para processamento de CSV/Excel
+        importScripts('https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js');
+        importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+        
+        let allData = [];
+        let headers = [];
+        let fileType = '';
+        let totalChunks = 0;
+        let processedChunks = 0;
 
-  // Função para analisar o arquivo de dados
-  const parseFileData = useCallback(async (file) => {
-    setLoading(true);
-    setProgress(10);
-    
-    try {
-      let data = [];
-      let columns = [];
-      
-      // Identificar tipo de arquivo pelo nome
-      const fileExt = file.name.split('.').pop().toLowerCase();
-
-      if (fileExt === 'csv') {
-        // Processar arquivo CSV
-        const text = await file.text();
-        setProgress(40);
-        
-        Papa.parse(text, {
-          header: true,
-          skipEmptyLines: true,
-          complete: (results) => {
-            data = results.data;
-            columns = results.meta.fields;
-            setProgress(80);
-            
-            // Enviar dados para o componente pai
-            processData(data, columns, file);
-          },
-          error: (error) => {
-            setError(`Erro ao processar o arquivo CSV: ${error.message}`);
-            setLoading(false);
-          }
-        });
-      } else if (['xlsx', 'xls'].includes(fileExt)) {
-        // Processar arquivo Excel
-        const arrayBuffer = await file.arrayBuffer();
-        setProgress(30);
-        
-        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-        setProgress(50);
-        
-        // Pegar a primeira planilha
-        const firstSheet = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheet];
-        
-        // Converter para JSON
-        data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-        setProgress(70);
-        
-        if (data.length > 0) {
-          columns = data[0];
-          // Remover o cabeçalho e converter para objetos
-          const rows = data.slice(1).map(row => {
-            const obj = {};
-            columns.forEach((col, index) => {
-              obj[col] = row[index];
-            });
-            return obj;
-          });
+        self.onmessage = function(e) {
+          const { type, data } = e.data;
           
-          // Enviar dados para o componente pai
-          processData(rows, columns, file);
-        } else {
-          setError('Arquivo Excel vazio ou sem cabeçalhos válidos');
-          setLoading(false);
+          if (type === 'processCSV') {
+            const { file, chunkSize } = data;
+            fileType = 'csv';
+            
+            Papa.parse(file, {
+              header: true,
+              dynamicTyping: true,
+              skipEmptyLines: true,
+              chunk: function(results, parser) {
+                if (headers.length === 0 && results.meta.fields) {
+                  headers = results.meta.fields;
+                }
+                
+                // Enviar chunk para o thread principal
+                self.postMessage({ 
+                  type: 'chunk', 
+                  data: results.data,
+                  totalRows: allData.length + results.data.length,
+                  progress: processedChunks / totalChunks
+                });
+                
+                // Adicionar apenas os primeiros 200 registros para preview
+                if (allData.length < 200) {
+                  const remaining = 200 - allData.length;
+                  allData = allData.concat(results.data.slice(0, remaining));
+                }
+                
+                processedChunks++;
+              },
+              complete: function(results) {
+                self.postMessage({ 
+                  type: 'complete', 
+                  headers: headers,
+                  sampleData: allData,
+                  totalRows: results.meta.cursor
+                });
+              },
+              error: function(error) {
+                self.postMessage({ type: 'error', error: error.message });
+              },
+              // Estimar número total de chunks para cálculo de progresso
+              beforeFirstChunk: function(chunk) {
+                const lines = chunk.split('\\n').length;
+                const fileSize = file.size;
+                const avgLineSize = chunk.length / lines;
+                totalChunks = Math.ceil(fileSize / (chunkSize || 500000));
+              }
+            });
+          } 
+          else if (type === 'processExcel') {
+            fileType = 'excel';
+            try {
+              const { arrayBuffer } = data;
+              const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+              const firstSheetName = workbook.SheetNames[0];
+              const worksheet = workbook.Sheets[firstSheetName];
+              
+              // Converter para JSON
+              const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+              
+              if (jsonData.length > 0) {
+                headers = jsonData[0];
+                
+                // Processar em chunks
+                const chunkSize = 1000;
+                const rows = jsonData.slice(1); // Remove header row
+                totalChunks = Math.ceil(rows.length / chunkSize);
+                
+                // Processar dados em chunks para não congelar
+                for (let i = 0; i < rows.length; i += chunkSize) {
+                  const chunk = rows.slice(i, i + chunkSize);
+                  
+                  // Converter chunk para objetos com cabeçalhos
+                  const chunkWithHeaders = chunk.map(row => {
+                    const obj = {};
+                    headers.forEach((header, index) => {
+                      obj[header] = row[index];
+                    });
+                    return obj;
+                  });
+                  
+                  processedChunks++;
+                  
+                  // Enviar chunk para o thread principal
+                  self.postMessage({ 
+                    type: 'chunk', 
+                    data: chunkWithHeaders,
+                    totalRows: i + chunkWithHeaders.length,
+                    progress: processedChunks / totalChunks
+                  });
+                  
+                  // Armazenar apenas os primeiros 200 para preview
+                  if (allData.length < 200) {
+                    const remaining = 200 - allData.length;
+                    allData = allData.concat(chunkWithHeaders.slice(0, remaining));
+                  }
+                }
+                
+                // Enviar conclusão
+                self.postMessage({ 
+                  type: 'complete', 
+                  headers: headers.map(h => String(h)),
+                  sampleData: allData,
+                  totalRows: rows.length
+                });
+              } else {
+                self.postMessage({ type: 'error', error: 'Arquivo vazio ou inválido' });
+              }
+            } catch (error) {
+              self.postMessage({ type: 'error', error: error.message });
+            }
+          }
+        };
+      `;
+      
+      const blob = new Blob([workerCode], { type: 'application/javascript' });
+      return URL.createObjectURL(blob);
+    };
+
+    // Inicializar o worker apenas se estiver em um ambiente browser
+    if (typeof window !== 'undefined' && !workerRef.current) {
+      const workerUrl = createWorkerBlob();
+      workerRef.current = new Worker(workerUrl);
+      
+      // Configurar event handlers
+      workerRef.current.onmessage = (e) => {
+        const { type, headers, sampleData, data: chunkData, error, progress, totalRows } = e.data;
+        
+        switch (type) {
+          case 'chunk':
+            setProgress(Math.min(99, progress * 100));
+            // Acumular todos os dados no buffer
+            if (chunkData && chunkData.length > 0) {
+              dataBufferRef.current = [...dataBufferRef.current, ...chunkData];
+              console.log(`Recebido chunk com ${chunkData.length} registros. Total acumulado: ${dataBufferRef.current.length}`);
+            }
+            break;
+            
+          case 'complete':
+            setLoading(false);
+            setProgress(100);
+            console.log(`Processamento completo. Dados acumulados: ${dataBufferRef.current.length}, Total esperado: ${totalRows}`);
+            if (onFileLoaded && headers && sampleData) {
+              // Verificar se temos todos os dados ou apenas amostra
+              const dataToPass = dataBufferRef.current.length > 0 ? dataBufferRef.current : sampleData;
+              console.log(`Enviando ${dataToPass.length} registros para ImportPage`);
+              onFileLoaded(sampleData, headers, file.name, totalRows, dataToPass);
+            }
+            break;
+            
+          case 'error':
+            setLoading(false);
+            setError(error || 'Erro ao processar arquivo');
+            break;
         }
-      } else {
-        setError('Formato de arquivo não suportado. Por favor, envie arquivos CSV, XLS ou XLSX.');
+      };
+      
+      workerRef.current.onerror = (error) => {
         setLoading(false);
+        setError(`Erro no worker: ${error.message}`);
+      };
+      
+      setWorkerInitialized(true);
+    }
+    
+    // Cleanup
+    return () => {
+      if (workerRef.current) {
+        workerRef.current.terminate();
+        workerRef.current = null;
+      }
+    };
+  }, [file, onFileLoaded]);
+
+  const handleFileChange = (event) => {
+    const selectedFile = event.target.files[0];
+    if (selectedFile) {
+      setFile(selectedFile);
+      setError(null);
+      dataBufferRef.current = [];
+      setProgress(0);
+    }
+  };
+
+  const processFile = async () => {
+    if (!file) {
+      setError('Por favor, selecione um arquivo.');
+      return;
+    }
+
+    setLoading(true);
+    setProgress(0);
+    setError(null);
+
+    try {
+      const fileExtension = file.name.split('.').pop().toLowerCase();
+
+      // Processar CSV via worker
+      if (fileExtension === 'csv') {
+        workerRef.current.postMessage({ 
+          type: 'processCSV', 
+          data: { file, chunkSize: 500000 } 
+        });
+      }
+      // Processar Excel via worker
+      else if (['xlsx', 'xls'].includes(fileExtension)) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const arrayBuffer = e.target.result;
+          workerRef.current.postMessage({ 
+            type: 'processExcel', 
+            data: { arrayBuffer }
+          });
+        };
+        reader.readAsArrayBuffer(file);
+      } 
+      else {
+        setLoading(false);
+        setError('Formato de arquivo não suportado. Por favor, envie um arquivo CSV, XLS ou XLSX.');
       }
     } catch (err) {
-      console.error('Erro ao processar arquivo:', err);
-      setError(`Erro ao processar o arquivo: ${err.message || 'Erro desconhecido'}`);
       setLoading(false);
+      setError(`Erro ao processar arquivo: ${err.message}`);
+      console.error('Erro ao processar arquivo:', err);
     }
-  }, [processData]);
-
-  const onDrop = useCallback((acceptedFiles) => {
-    setError(null);
-    
-    if (acceptedFiles && acceptedFiles.length > 0) {
-      const file = acceptedFiles[0];
-      parseFileData(file);
-    } else {
-      setError('Nenhum arquivo válido selecionado');
-    }
-  }, [parseFileData]);
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: {
-      'text/csv': ['.csv'],
-      'application/vnd.ms-excel': ['.xls'],
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx']
-    },
-    multiple: false
-  });
+  };
 
   return (
-    <div className="mb-4">
-      {error && (
-        <Alert variant="danger" onClose={() => setError(null)} dismissible>
-          {error}
-        </Alert>
-      )}
-
-      <div 
-        {...getRootProps()} 
-        className={`dropzone ${isDragActive ? 'active' : ''}`}
-        style={{
-          border: '2px dashed #0087F7',
-          borderRadius: '5px',
-          padding: '40px',
-          textAlign: 'center',
-          cursor: 'pointer',
-          transition: 'all 0.3s ease',
-          backgroundColor: isDragActive ? '#e6f7ff' : '#f8f9fc'
-        }}
-      >
-        <input {...getInputProps()} />
-        
-        {loading ? (
-          <div>
-            <p>Processando arquivo...</p>
-            <ProgressBar animated now={progress} label={`${progress}%`} className="my-3" />
-          </div>
-        ) : isDragActive ? (
-          <div>
-            <FiUpload size={50} color="#0087F7" />
-            <p className="mt-3">Solte o arquivo aqui...</p>
-          </div>
-        ) : (
-          <div>
-            <FiUpload size={50} color="#0087F7" />
-            <p className="mt-3">Arraste e solte um arquivo CSV, XLS ou XLSX aqui, ou clique para selecionar</p>
-            <p className="text-muted">Somente arquivos CSV, XLS e XLSX são suportados</p>
-          </div>
+    <Card className="mb-4">
+      <Card.Body>
+        {error && (
+          <Alert variant="danger" onClose={() => setError(null)} dismissible>
+            {error}
+          </Alert>
         )}
-      </div>
 
-      {fileInfo && !loading && (
-        <Card className="mt-3">
-          <Card.Header className="d-flex align-items-center">
-            <FiCheckCircle className="text-success me-2" /> Arquivo carregado com sucesso
-          </Card.Header>
-          <Card.Body>
-            <div className="d-flex align-items-center mb-3">
-              <FiFile size={24} className="me-2" />
-              <div>
-                <h5 className="mb-0">{fileInfo.name}</h5>
-                <small className="text-muted">
-                  Tamanho: {fileInfo.size} • 
-                  Linhas: {fileInfo.rows} • 
-                  Colunas: {fileInfo.columns}
-                </small>
+        <Form.Group controlId="fileUpload" className="mb-3">
+          <Form.Label>Selecione um arquivo CSV, XLS ou XLSX:</Form.Label>
+          <Form.Control
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.xls,.xlsx"
+            onChange={handleFileChange}
+            disabled={loading}
+          />
+          <Form.Text className="text-muted">
+            O arquivo deve conter os dados da tabela CMED para importação.
+          </Form.Text>
+        </Form.Group>
+
+        {progress > 0 && progress < 100 && (
+          <div className="mb-3">
+            <div className="progress">
+              <div 
+                className="progress-bar" 
+                role="progressbar" 
+                style={{ width: `${progress}%` }} 
+                aria-valuenow={progress} 
+                aria-valuemin="0" 
+                aria-valuemax="100"
+              >
+                {Math.round(progress)}%
               </div>
             </div>
-            <Button 
-              variant="outline-secondary" 
-              size="sm" 
-              onClick={() => {
-                setFileInfo(null);
-                setError(null);
-              }}
-            >
-              Selecionar outro arquivo
+            <small className="text-muted mt-1 d-block">
+              Processando arquivo, por favor aguarde...
+            </small>
+          </div>
+        )}
+
+        <div className="d-flex justify-content-end">
+          {loading ? (
+            <Button variant="primary" disabled>
+              <Spinner animation="border" size="sm" className="me-2" />
+              Processando...
             </Button>
-          </Card.Body>
-        </Card>
-      )}
-    </div>
+          ) : (
+            <Button 
+              variant="primary" 
+              onClick={processFile} 
+              disabled={!file || !workerInitialized}
+            >
+              Carregar Arquivo
+            </Button>
+          )}
+        </div>
+      </Card.Body>
+    </Card>
   );
 };
 

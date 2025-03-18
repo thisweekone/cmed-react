@@ -19,6 +19,8 @@ const REQUIRED_FIELDS = [
 const ColumnMapper = ({ sourceColumns, sampleData, onMapComplete }) => {
   const [columnMapping, setColumnMapping] = useState({});
   const [validated, setValidated] = useState(false);
+  const [manualDate, setManualDate] = useState('');
+  const [useManualDate, setUseManualDate] = useState(false);
 
   // Tentar mapear colunas automaticamente baseado em semelhança
   useEffect(() => {
@@ -102,7 +104,7 @@ const ColumnMapper = ({ sourceColumns, sampleData, onMapComplete }) => {
     
     // Verificar se todos os campos obrigatórios estão mapeados
     const missingRequiredFields = REQUIRED_FIELDS.filter(
-      field => field.required && !columnMapping[field.key]
+      field => field.required && !columnMapping[field.key] && !(field.key === 'data_publicacao' && useManualDate)
     );
     
     if (missingRequiredFields.length > 0) {
@@ -110,8 +112,14 @@ const ColumnMapper = ({ sourceColumns, sampleData, onMapComplete }) => {
       return;
     }
     
+    // Se estiver usando data manual, adicionar ao mapeamento
+    const finalMapping = { ...columnMapping };
+    if (useManualDate) {
+      finalMapping._manualDate = manualDate; // Prefixo _ para indicar campo especial
+    }
+    
     // Chamar a função de callback com o mapeamento
-    onMapComplete(columnMapping);
+    onMapComplete(finalMapping);
   };
 
   // Renderizar uma amostra dos dados
@@ -167,23 +175,66 @@ const ColumnMapper = ({ sourceColumns, sampleData, onMapComplete }) => {
                 <Form.Label>
                   {field.label} {field.required && <span className="text-danger">*</span>}
                 </Form.Label>
-                <Form.Select
-                  required={field.required}
-                  value={columnMapping[field.key] || ''}
-                  onChange={(e) => {
-                    setColumnMapping({
-                      ...columnMapping,
-                      [field.key]: e.target.value
-                    });
-                  }}
-                >
-                  <option value="">Selecione a coluna...</option>
-                  {sourceColumns.map((column, idx) => (
-                    <option key={idx} value={column}>
-                      {column}
-                    </option>
-                  ))}
-                </Form.Select>
+                
+                {field.key === 'data_publicacao' ? (
+                  <>
+                    <div className="mb-2">
+                      <Form.Check
+                        type="checkbox"
+                        id="use-manual-date"
+                        label="Inserir data manualmente"
+                        checked={useManualDate}
+                        onChange={e => setUseManualDate(e.target.checked)}
+                      />
+                    </div>
+                    
+                    {useManualDate ? (
+                      <Form.Control
+                        type="date"
+                        required={field.required}
+                        value={manualDate}
+                        onChange={e => setManualDate(e.target.value)}
+                      />
+                    ) : (
+                      <Form.Select
+                        required={field.required}
+                        value={columnMapping[field.key] || ''}
+                        onChange={(e) => {
+                          setColumnMapping({
+                            ...columnMapping,
+                            [field.key]: e.target.value
+                          });
+                        }}
+                      >
+                        <option value="">Selecione a coluna...</option>
+                        {sourceColumns.map((column, idx) => (
+                          <option key={idx} value={column}>
+                            {column}
+                          </option>
+                        ))}
+                      </Form.Select>
+                    )}
+                  </>
+                ) : (
+                  <Form.Select
+                    required={field.required}
+                    value={columnMapping[field.key] || ''}
+                    onChange={(e) => {
+                      setColumnMapping({
+                        ...columnMapping,
+                        [field.key]: e.target.value
+                      });
+                    }}
+                  >
+                    <option value="">Selecione a coluna...</option>
+                    {sourceColumns.map((column, idx) => (
+                      <option key={idx} value={column}>
+                        {column}
+                      </option>
+                    ))}
+                  </Form.Select>
+                )}
+                
                 <Form.Control.Feedback type="invalid">
                   Este campo é obrigatório
                 </Form.Control.Feedback>
