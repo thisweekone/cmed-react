@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Table, Spinner, Alert, Form, InputGroup, Button, Pagination } from 'react-bootstrap';
 import supabase from '../services/supabaseClient';
 
@@ -11,7 +11,7 @@ const ListPage = () => {
   const [totalCount, setTotalCount] = useState(0);
   const itemsPerPage = 20;
 
-  const fetchMedicamentos = async () => {
+  const fetchMedicamentos = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -49,11 +49,11 @@ const ListPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentPage, searchTerm, itemsPerPage]);
 
   useEffect(() => {
     fetchMedicamentos();
-  }, [currentPage, searchTerm]);
+  }, [currentPage, searchTerm, fetchMedicamentos]);
 
   const handleSearch = (e) => {
     e.preventDefault();
