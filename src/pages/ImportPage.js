@@ -125,12 +125,12 @@ const ImportPage = () => {
           importacao_id: importId
         }));
         
-        const { data, error } = await supabase
+        const { error: batchError } = await supabase
           .from('medicamentos')
           .insert(batch);
         
-        if (error) {
-          console.error('Erro ao inserir lote:', error);
+        if (batchError) {
+          console.error('Erro ao inserir lote:', batchError);
           errorCount += batch.length;
         } else {
           successCount += batch.length;

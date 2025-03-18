@@ -11,7 +11,25 @@ const FileUploader = ({ onFileLoaded }) => {
   const [progress, setProgress] = useState(0);
   const [fileInfo, setFileInfo] = useState(null);
 
-  const parseFileData = async (file) => {
+  // Função para processar os dados após eles serem carregados
+  const processData = useCallback((data, columns, file) => {
+    setProgress(90);
+    setFileInfo({
+      name: file.name,
+      size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
+      rows: data.length,
+      columns: columns.length
+    });
+    
+    setProgress(100);
+    setLoading(false);
+    
+    // Enviar dados para o componente pai
+    onFileLoaded(data, columns, file.name);
+  }, [onFileLoaded]);
+
+  // Função para analisar o arquivo de dados
+  const parseFileData = useCallback(async (file) => {
     setLoading(true);
     setProgress(10);
     
@@ -85,23 +103,7 @@ const FileUploader = ({ onFileLoaded }) => {
       setError(`Erro ao processar o arquivo: ${err.message || 'Erro desconhecido'}`);
       setLoading(false);
     }
-  };
-
-  const processData = (data, columns, file) => {
-    setProgress(90);
-    setFileInfo({
-      name: file.name,
-      size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
-      rows: data.length,
-      columns: columns.length
-    });
-    
-    setProgress(100);
-    setLoading(false);
-    
-    // Enviar dados para o componente pai
-    onFileLoaded(data, columns, file.name);
-  };
+  }, [processData]);
 
   const onDrop = useCallback((acceptedFiles) => {
     setError(null);
@@ -112,7 +114,7 @@ const FileUploader = ({ onFileLoaded }) => {
     } else {
       setError('Nenhum arquivo válido selecionado');
     }
-  }, []);
+  }, [parseFileData]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,

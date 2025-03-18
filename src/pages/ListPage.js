@@ -11,10 +11,6 @@ const ListPage = () => {
   const [totalCount, setTotalCount] = useState(0);
   const itemsPerPage = 20;
 
-  useEffect(() => {
-    fetchMedicamentos();
-  }, [currentPage]);
-
   const fetchMedicamentos = async () => {
     try {
       setLoading(true);
@@ -54,6 +50,10 @@ const ListPage = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchMedicamentos();
+  }, [currentPage, searchTerm]);
 
   const handleSearch = (e) => {
     e.preventDefault();
