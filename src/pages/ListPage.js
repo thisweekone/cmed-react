@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Container, Table, Spinner, Alert, Form, InputGroup, Button, 
-  Pagination, Modal, Card, Tabs, Tab, Badge, ListGroup
+  Pagination, Modal, Card, Tabs, Tab, Badge, ListGroup, Row, Col
 } from 'react-bootstrap';
-import { Line } from 'react-chartjs-2';
+import { useNavigate } from 'react-router-dom';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -14,7 +14,13 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
+import { Line } from 'react-chartjs-2';
 import { supabase } from '../supabaseClient';
+import { formatarDataBancoDados } from '../utils/DateUtils';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 
 // Registrar componentes do Chart.js
 ChartJS.register(
@@ -288,10 +294,7 @@ const ListPage = () => {
   
   // Preparar dados para o gráfico de histórico de um medicamento
   const chartData = {
-    labels: priceHistory.map(item => {
-      const date = new Date(item.data_publicacao);
-      return date.toLocaleDateString('pt-BR');
-    }),
+    labels: priceHistory.map(item => formatarDataBancoDados(item.data_publicacao)),
     datasets: [
       {
         label: 'Preço Fábrica sem Impostos (R$)',
@@ -311,7 +314,7 @@ const ListPage = () => {
     allDates.sort((a, b) => new Date(a) - new Date(b));
     
     // Formatar datas para exibição
-    const labels = allDates.map(date => new Date(date).toLocaleDateString('pt-BR'));
+    const labels = allDates.map(date => formatarDataBancoDados(date));
     
     // Criar datasets para cada medicamento
     const datasets = selectedMedicamentos.map((med, index) => {
@@ -385,7 +388,7 @@ const ListPage = () => {
     
     return allDates.map(date => {
       const row = {
-        data: new Date(date).toLocaleDateString('pt-BR'),
+        data: formatarDataBancoDados(date),
       };
       
       // Adicionar preço para cada medicamento nesta data
@@ -399,6 +402,120 @@ const ListPage = () => {
       
       return row;
     });
+  };
+
+  // Função para exportar comparação em PDF
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+    const title = "Comparação de Preços de Medicamentos";
+    
+    // Configuração do título
+    doc.setFontSize(16);
+    doc.text(title, 14, 20);
+    
+    // Configuração da data
+    doc.setFontSize(10);
+    doc.text(`Data do relatório: ${formatarDataBancoDados(new Date().toISOString())}`, 14, 28);
+    
+    // Legenda de medicamentos
+    doc.setFontSize(12);
+    doc.text("Medicamentos comparados:", 14, 38);
+    
+    let yPosition = 45;
+    selectedMedicamentos.forEach((med, index) => {
+      doc.setFontSize(10);
+      doc.text(`${index + 1}. ${med.substancia} - ${med.apresentacao}`, 18, yPosition);
+      yPosition += 6;
+    });
+    
+    // Preparar dados para a tabela
+    const rows = prepareComparisonTableData();
+    if (rows.length === 0) {
+      doc.setFontSize(12);
+      doc.text("Não há dados para exibir", 14, yPosition + 10);
+      doc.save("comparacao_precos.pdf");
+      return;
+    }
+    
+    // Montar cabeçalho da tabela
+    const headers = [
+      { header: 'Data', dataKey: 'data' }
+    ];
+    
+    selectedMedicamentos.forEach(med => {
+      headers.push({ 
+        header: `${med.substancia}`, 
+        dataKey: `med_${med.id}` 
+      });
+    });
+    
+    // Converter dados para o formato esperado pelo jspdf-autotable
+    const data = rows.map(row => {
+      const rowData = { data: row.data };
+      selectedMedicamentos.forEach(med => {
+        const value = row[`med_${med.id}`];
+        rowData[`med_${med.id}`] = value !== null ? `R$ ${value.toFixed(2).replace('.', ',')}` : '-';
+      });
+      return rowData;
+    });
+    
+    // Criar tabela
+    autoTable(doc, {
+      startY: yPosition + 10,
+      head: [headers.map(h => h.header)],
+      body: data.map(row => headers.map(h => row[h.dataKey])),
+      theme: 'grid',
+      styles: { fontSize: 9, cellPadding: 2 },
+      headStyles: { fillColor: [75, 75, 75] }
+    });
+    
+    // Adicionar rodapé
+    const pageCount = doc.internal.getNumberOfPages();
+    for(let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.text(`Página ${i} de ${pageCount}`, doc.internal.pageSize.width / 2, doc.internal.pageSize.height - 10, { align: "center" });
+    }
+    
+    doc.save("comparacao_precos.pdf");
+  };
+  
+  // Função para exportar comparação em Excel
+  const exportToExcel = () => {
+    const rows = prepareComparisonTableData();
+    if (rows.length === 0) {
+      alert("Não há dados para exportar");
+      return;
+    }
+    
+    // Formatar dados para Excel
+    const excelData = rows.map(row => {
+      const newRow = { "Data": row.data };
+      selectedMedicamentos.forEach(med => {
+        const value = row[`med_${med.id}`];
+        newRow[`${med.substancia} - ${med.apresentacao}`] = 
+          value !== null ? value : null;
+      });
+      return newRow;
+    });
+    
+    // Criar workbook e worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    
+    // Configurar largura das colunas
+    const colWidths = [];
+    selectedMedicamentos.forEach(() => colWidths.push({ wch: 30 }));
+    colWidths.unshift({ wch: 12 }); // Para a coluna de data
+    ws['!cols'] = colWidths;
+    
+    // Adicionar a planilha ao workbook
+    XLSX.utils.book_append_sheet(wb, ws, "Comparação de Preços");
+    
+    // Gerar arquivo e salvar
+    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const data = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(data, "comparacao_precos.xlsx");
   };
 
   return (
@@ -517,7 +634,7 @@ const ListPage = () => {
                     </td>
                     <td>
                       {med.data_preco_recente 
-                        ? new Date(med.data_preco_recente).toLocaleDateString('pt-BR') 
+                        ? formatarDataBancoDados(med.data_preco_recente) 
                         : '-'}
                     </td>
                     <td>
@@ -589,7 +706,7 @@ const ListPage = () => {
                     <tbody>
                       {priceHistory.map((item, index) => (
                         <tr key={index}>
-                          <td>{new Date(item.data_publicacao).toLocaleDateString('pt-BR')}</td>
+                          <td>{formatarDataBancoDados(item.data_publicacao)}</td>
                           <td>R$ {item.pf_sem_impostos.toFixed(2).replace('.', ',')}</td>
                         </tr>
                       ))}
@@ -684,6 +801,46 @@ const ListPage = () => {
                     Não há dados históricos de preços para comparação.
                   </Alert>
                 )}
+              </Tab>
+              <Tab eventKey="export" title="Exportar">
+                <div className="p-3">
+                  <h5>Exportar comparação de preços</h5>
+                  <p className="text-muted">
+                    Escolha o formato para baixar a comparação de preços dos medicamentos selecionados.
+                  </p>
+                  
+                  <Row className="mt-4">
+                    <Col md={6}>
+                      <Card className="text-center mb-3">
+                        <Card.Body>
+                          <i className="bi bi-file-earmark-pdf" style={{ fontSize: '2rem', color: '#dc3545' }}></i>
+                          <Card.Title className="mt-3">Documento PDF</Card.Title>
+                          <Card.Text>
+                            Exportar para um documento PDF com tabela formatada.
+                          </Card.Text>
+                          <Button variant="danger" onClick={exportToPDF}>
+                            <i className="bi bi-download me-1"></i> Baixar PDF
+                          </Button>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                    
+                    <Col md={6}>
+                      <Card className="text-center mb-3">
+                        <Card.Body>
+                          <i className="bi bi-file-earmark-excel" style={{ fontSize: '2rem', color: '#198754' }}></i>
+                          <Card.Title className="mt-3">Planilha Excel</Card.Title>
+                          <Card.Text>
+                            Exportar para uma planilha Excel editável.
+                          </Card.Text>
+                          <Button variant="success" onClick={exportToExcel}>
+                            <i className="bi bi-download me-1"></i> Baixar Excel
+                          </Button>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                  </Row>
+                </div>
               </Tab>
             </Tabs>
           )}

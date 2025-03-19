@@ -4,6 +4,7 @@ import { Container, Nav, Navbar } from 'react-bootstrap';
 import ImportPage from './pages/ImportPage';
 import SearchPage from './pages/SearchPage';
 import ListPage from './pages/ListPage';
+import TestDatePage from './pages/TestDatePage';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
               <Nav.Link as={Link} to="/import">Importar Tabela</Nav.Link>
               <Nav.Link as={Link} to="/list">Listar Medicamentos</Nav.Link>
               <Nav.Link as={Link} to="/search">Pesquisar Medicamentos</Nav.Link>
+              <Nav.Link as={Link} to="/test-date">Testar Data</Nav.Link>
             </Nav>
           </Navbar.Collapse>
         </Container>
@@ -27,6 +29,7 @@ function App() {
         <Route path="/import" element={<ImportPage />} />
         <Route path="/list" element={<ListPage />} />
         <Route path="/search" element={<SearchPage />} />
+        <Route path="/test-date" element={<TestDatePage />} />
         <Route path="/" element={<ImportPage />} />
       </Routes>
     </div>

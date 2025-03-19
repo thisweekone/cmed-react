@@ -111,7 +111,16 @@ CREATE OR REPLACE FUNCTION upsert_medicamento_com_preco(
 DECLARE
   v_hash TEXT;
   v_medicamento_id INTEGER;
+  v_data_publicacao DATE;
 BEGIN
+  -- Garantir que a data está no formato correto
+  BEGIN
+    v_data_publicacao := p_data_publicacao::DATE;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Erro ao converter data: %, usando data atual', p_data_publicacao;
+    v_data_publicacao := CURRENT_DATE;
+  END;
+
   -- Gerar hash identificador
   v_hash := generate_medicamento_hash(p_substancia, p_laboratorio, p_produto, p_apresentacao, p_codigo_ggrem);
   
@@ -136,7 +145,78 @@ BEGIN
   INSERT INTO precos_historico (
     medicamento_id, importacao_id, data_publicacao, pf_sem_impostos
   ) VALUES (
-    v_medicamento_id, p_importacao_id, p_data_publicacao, p_pf_sem_impostos
+    v_medicamento_id, p_importacao_id, v_data_publicacao, p_pf_sem_impostos
+  )
+  ON CONFLICT (medicamento_id, data_publicacao) 
+  DO UPDATE SET
+    pf_sem_impostos = p_pf_sem_impostos,
+    importacao_id = p_importacao_id;
+    
+  RETURN v_medicamento_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+`;
+
+/**
+ * Script de atualização da função de upsert de medicamentos para garantir tratamento correto da data
+ */
+const updateUpsertFunctionScript = `
+-- Função atualizada para inserir ou atualizar medicamento com preço (melhor tratamento de data)
+CREATE OR REPLACE FUNCTION upsert_medicamento_com_preco(
+  p_substancia TEXT,
+  p_laboratorio TEXT,
+  p_produto TEXT,
+  p_apresentacao TEXT,
+  p_codigo_ggrem TEXT,
+  p_registro TEXT,
+  p_ean_1 TEXT,
+  p_classe_terapeutica TEXT,
+  p_tipo_de_produto TEXT,
+  p_regime_de_preco TEXT,
+  p_data_publicacao TEXT,
+  p_pf_sem_impostos NUMERIC,
+  p_importacao_id INTEGER
+) RETURNS INTEGER AS $$
+DECLARE
+  v_hash TEXT;
+  v_medicamento_id INTEGER;
+  v_data_publicacao DATE;
+BEGIN
+  -- Garantir que a data está no formato correto
+  BEGIN
+    -- Tentar converter a string de data para tipo DATE
+    v_data_publicacao := p_data_publicacao::DATE;
+    RAISE NOTICE 'Data convertida com sucesso: %', v_data_publicacao;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Erro ao converter data: %, usando data atual', p_data_publicacao;
+    v_data_publicacao := CURRENT_DATE;
+  END;
+
+  -- Gerar hash identificador
+  v_hash := generate_medicamento_hash(p_substancia, p_laboratorio, p_produto, p_apresentacao, p_codigo_ggrem);
+  
+  -- Inserir ou atualizar medicamento base
+  INSERT INTO medicamentos_base (
+    substancia, laboratorio, produto, apresentacao, codigo_ggrem, 
+    registro, ean_1, classe_terapeutica, tipo_de_produto, regime_de_preco, hash_identificador
+  ) VALUES (
+    p_substancia, p_laboratorio, p_produto, p_apresentacao, p_codigo_ggrem,
+    p_registro, p_ean_1, p_classe_terapeutica, p_tipo_de_produto, p_regime_de_preco, v_hash
+  )
+  ON CONFLICT (hash_identificador) 
+  DO UPDATE SET
+    registro = COALESCE(p_registro, medicamentos_base.registro),
+    ean_1 = COALESCE(p_ean_1, medicamentos_base.ean_1),
+    classe_terapeutica = COALESCE(p_classe_terapeutica, medicamentos_base.classe_terapeutica),
+    tipo_de_produto = COALESCE(p_tipo_de_produto, medicamentos_base.tipo_de_produto),
+    regime_de_preco = COALESCE(p_regime_de_preco, medicamentos_base.regime_de_preco)
+  RETURNING id INTO v_medicamento_id;
+  
+  -- Inserir ou atualizar preço
+  INSERT INTO precos_historico (
+    medicamento_id, importacao_id, data_publicacao, pf_sem_impostos
+  ) VALUES (
+    v_medicamento_id, p_importacao_id, v_data_publicacao, p_pf_sem_impostos
   )
   ON CONFLICT (medicamento_id, data_publicacao) 
   DO UPDATE SET
@@ -174,8 +254,9 @@ CREATE POLICY "Permitir acesso anônimo a importacoes" ON importacoes
 export const sqlScripts = {
   createTablesScript,
   hashFunctionScript,
-  upsertFunctionScript, 
-  securityPoliciesScript
+  upsertFunctionScript,
+  securityPoliciesScript,
+  updateUpsertFunctionScript
 };
 
 export default sqlScripts;

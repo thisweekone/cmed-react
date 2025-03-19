@@ -5,6 +5,8 @@ import supabase from '../services/supabaseClient';
 import FileUploader from '../components/FileUploader';
 import DataPreview from '../components/DataPreview';
 import { useNavigate } from 'react-router-dom';
+import { diagnosticarArquivo, validarDataPublicacao } from '../utils/ImportDiagnostics';
+import { atualizarFuncaoConversaoData, limparDadosBanco, verificarConfiguracaoBanco } from '../utils/DatabaseSetup';
 
 const ImportPage = () => {
   const navigate = useNavigate();
@@ -26,6 +28,10 @@ const ImportPage = () => {
   const [importStatus, setImportStatus] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [batchSize, setBatchSize] = useState(500);
+  const [diagnostico, setDiagnostico] = useState(null);
+  const [validacaoData, setValidacaoData] = useState(null);
+  const [atualizandoFuncoes, setAtualizandoFuncoes] = useState(false);
+  const [statusConfiguracao, setStatusConfiguracao] = useState(null);
 
   // Verificar se as tabelas necessárias existem no banco de dados
   useEffect(() => {
@@ -33,32 +39,90 @@ const ImportPage = () => {
   }, []);
 
   const checkDatabase = async () => {
-    const { data, error } = await supabase
-      .from('medicamentos_base')
-      .select('id')
-      .limit(1);
-    if (error) {
+    try {
+      const resultado = await verificarConfiguracaoBanco();
+      setDbInitialized(resultado.success);
+      setStatusConfiguracao(resultado);
+      
+      if (!resultado.success) {
+        setError(`Erro na verificação do banco de dados: ${resultado.message}.`);
+      }
+    } catch (error) {
       console.error('Erro ao verificar banco de dados:', error);
       setError(`Erro na verificação do banco de dados: ${error.message}.`);
-    } else {
-      setDbInitialized(true);
+    }
+  };
+  
+  // Função para atualizar as funções do banco de dados
+  const handleUpdateFunctions = async () => {
+    try {
+      setAtualizandoFuncoes(true);
+      setError(null);
+      
+      const resultado = await atualizarFuncaoConversaoData();
+      
+      if (resultado.success) {
+        setSuccess(true);
+        setStatusConfiguracao({
+          success: true,
+          message: 'Funções atualizadas com sucesso!'
+        });
+      } else {
+        setError(`Erro ao atualizar funções: ${resultado.message}`);
+      }
+    } catch (error) {
+      console.error('Erro ao atualizar funções:', error);
+      setError(`Erro ao atualizar funções: ${error.message}`);
+    } finally {
+      setAtualizandoFuncoes(false);
+    }
+  };
+  
+  // Função para limpar todos os dados do banco
+  const handleClearDatabase = async () => {
+    if (!window.confirm('Tem certeza que deseja limpar todos os dados? Esta ação não pode ser desfeita.')) {
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const resultado = await limparDadosBanco();
+      
+      if (resultado.success) {
+        setSuccess(true);
+        alert('Dados limpos com sucesso!');
+      } else {
+        setError(`Erro ao limpar dados: ${resultado.message}`);
+      }
+    } catch (error) {
+      console.error('Erro ao limpar dados:', error);
+      setError(`Erro ao limpar dados: ${error.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
   // Função chamada quando o arquivo é carregado pelo FileUploader
-  const handleFileLoaded = (fileData, fileColumns, name, total, completeData) => {
+  const handleFileLoaded = (fileData, fileColumns, name, total, completeData, metadados) => {
     console.log('Dados recebidos do uploader:');
     console.log('fileData:', fileData);
     console.log('fileColumns:', fileColumns);
     console.log('name:', name);
     console.log('total:', total);
     console.log('completeData:', completeData);
+    console.log('metadados:', metadados);
+    
+    // Limpar estados anteriores
+    setError(null);
+    setDiagnostico(null);
+    setValidacaoData(null);
     
     setData(fileData);
     setColumns(fileColumns);
     setFileName(name);
     setTotalRows(total || fileData.length);
-    setError(null);
     
     // Armazenar dados completos, se disponíveis
     if (completeData && completeData.length > 0) {
@@ -71,6 +135,41 @@ const ImportPage = () => {
     
     // Iniciar com mappings vazios ou tentar mapear automaticamente
     const initialMappings = {};
+    
+    // Tentar encontrar colunas de data para data_publicacao automaticamente
+    let dataPublicacaoEncontrada = false;
+    if (metadados && metadados.dateCols && metadados.dateCols.length > 0) {
+      // Procurar por colunas de data que possam ser a data de publicação
+      const possiveisColunasData = metadados.dateCols.filter(col => {
+        const colLower = col.toLowerCase();
+        return colLower.includes('public') || 
+               colLower.includes('data') || 
+               colLower.includes('date') || 
+               colLower.includes('vigencia');
+      });
+      
+      if (possiveisColunasData.length > 0) {
+        // Se encontramos uma coluna de data que parece ser data de publicação, usamos ela
+        const primeiraDataAmostra = completeData[0][possiveisColunasData[0]];
+        console.log(`Encontrada possível coluna de data de publicação: ${possiveisColunasData[0]}, valor: ${primeiraDataAmostra}`);
+        
+        if (primeiraDataAmostra) {
+          // Verificar se a data está no formato correto
+          const validacao = validarDataPublicacao(primeiraDataAmostra);
+          if (validacao.valido) {
+            setPublicationDate(primeiraDataAmostra);
+            dataPublicacaoEncontrada = true;
+          }
+        }
+      }
+    }
+    
+    // Se não encontramos uma data de publicação no arquivo, usamos a data atual
+    if (!dataPublicacaoEncontrada) {
+      const dataHoje = format(new Date(), 'yyyy-MM-dd');
+      setPublicationDate(dataHoje);
+    }
+    
     fileColumns.forEach(col => {
       // Tenta fazer um mapeamento automático por correspondência aproximada
       const normalizedCol = col.toLowerCase();
@@ -101,8 +200,18 @@ const ImportPage = () => {
     
     setMappings(initialMappings);
     
-    // Definir a data de publicação para o dia atual por padrão
-    setPublicationDate(format(new Date(), 'yyyy-MM-dd'));
+    // Validar a data de publicação
+    const resultadoValidacao = validarDataPublicacao(publicationDate);
+    setValidacaoData(resultadoValidacao);
+    
+    // Executar diagnóstico nos dados
+    const diagnosticoResult = diagnosticarArquivo(fileData, initialMappings);
+    setDiagnostico(diagnosticoResult);
+    
+    // Se houver problemas graves, mostrar como erro
+    if (diagnosticoResult.status === 'error') {
+      setError(diagnosticoResult.message + ': ' + diagnosticoResult.detalhes);
+    }
   };
 
   // Função para criar o registro de importação
@@ -163,6 +272,42 @@ const ImportPage = () => {
       return;
     }
     
+    // Validar a data de publicação novamente
+    const validacao = validarDataPublicacao(publicationDate);
+    setValidacaoData(validacao);
+    
+    if (!validacao.valido) {
+      setError(`Data de publicação inválida: ${validacao.message}`);
+      return;
+    }
+
+    // Verificar se temos dados para importar
+    const dataToImport = fullData.length > 0 ? fullData : data;
+    console.log(`Verificando dados para importação: ${dataToImport.length} registros disponíveis`);
+    
+    if (!dataToImport || dataToImport.length === 0) {
+      setError('Não há dados para importar. Por favor, carregue um arquivo válido.');
+      return;
+    }
+
+    // Verificar se os campos mapeados existem nos dados
+    const sampleRow = dataToImport[0];
+    const invalidMappings = [];
+    
+    for (const [field, column] of Object.entries(mappings)) {
+      if (sampleRow[column] === undefined) {
+        invalidMappings.push(`${field} -> ${column}`);
+      }
+    }
+    
+    if (invalidMappings.length > 0) {
+      setError(`Alguns campos mapeados não existem nos dados: ${invalidMappings.join(', ')}`);
+      return;
+    }
+
+    console.log('Mapeamento de campos:', mappings);
+    console.log('Exemplo de dados na primeira linha:', sampleRow);
+    
     try {
       setLoading(true);
       setError(null);
@@ -184,7 +329,6 @@ const ImportPage = () => {
       let processed = 0;
       
       // Processar em lotes
-      const dataToImport = fullData.length > 0 ? fullData : data;
       console.log(`Iniciando importação com ${dataToImport.length} registros em lotes de ${batchSize}`);
 
       // Dividir em lotes
@@ -216,6 +360,14 @@ const ImportPage = () => {
           } else {
             console.error('Erro ao importar linha:', result.reason);
             erros++;
+            
+            // Mostrar no máximo 5 erros detalhados no console para não sobrecarregar
+            if (erros <= 5) {
+              console.error('Detalhes do erro:', {
+                mensagem: result.reason.message,
+                stack: result.reason.stack
+              });
+            }
           }
         });
         
@@ -264,6 +416,12 @@ const ImportPage = () => {
   // Processar uma única linha de dados
   const processRow = async (row, importId) => {
     try {
+      // Obter a data formatada com hora para evitar problemas de fuso horário
+      const validacaoData = validarDataPublicacao(publicationDate);
+      const formattedDate = validacaoData.valido ? 
+                            validacaoData.dataFormatada : 
+                            `${publicationDate}T12:00:00`; // Fallback com hora fixa
+      
       // Mapear os campos de acordo com as configurações do usuário
       const mappedData = {
         substancia: row[mappings.substancia],
@@ -276,14 +434,30 @@ const ImportPage = () => {
         classe_terapeutica: row[mappings.classe_terapeutica],
         tipo_de_produto: row[mappings.tipo_de_produto],
         regime_de_preco: row[mappings.regime_de_preco],
-        pf_sem_impostos: parseFloat(String(row[mappings.pf_sem_impostos]).replace(',', '.')),
-        data_publicacao: publicationDate,
+        pf_sem_impostos: parseFloat(String(row[mappings.pf_sem_impostos] || '0').replace(',', '.')),
+        data_publicacao: formattedDate,
         importacao_id: importId
       };
       
+      // Verificar se todos os campos obrigatórios têm valores
+      const camposVazios = [];
+      for (const [campo, valor] of Object.entries(mappedData)) {
+        if (valor === undefined || valor === null || valor === '' || (typeof valor === 'number' && isNaN(valor))) {
+          camposVazios.push(campo);
+        }
+      }
+      
+      if (camposVazios.length > 0) {
+        throw new Error(`Campos obrigatórios vazios: ${camposVazios.join(', ')}`);
+      }
+      
+      // Log da data de publicação para depuração
+      console.log('Data de publicação original:', publicationDate);
+      console.log('Data de publicação formatada sendo enviada:', mappedData.data_publicacao);
+      
       // Chamar a função de upsert do Supabase
       const { data, error } = await supabase.rpc(
-        'upsert_medicamento_com_preco',
+        'upsert_medicamento_com_preco_v2',
         {
           p_substancia: mappedData.substancia,
           p_laboratorio: mappedData.laboratorio,
@@ -301,7 +475,17 @@ const ImportPage = () => {
         }
       );
       
-      if (error) throw error;
+      if (error) {
+        console.error('Erro ao inserir no Supabase:', error);
+        console.error('Parâmetros enviados:', {
+          substancia: mappedData.substancia,
+          laboratorio: mappedData.laboratorio,
+          codigo_ggrem: mappedData.codigo_ggrem,
+          data_publicacao: mappedData.data_publicacao,
+          tipo: typeof mappedData.data_publicacao
+        });
+        throw error;
+      }
       return data;
     } catch (error) {
       console.error('Erro ao processar linha:', error);
@@ -356,16 +540,73 @@ const ImportPage = () => {
                 <ProgressBar 
                   now={importProgress} 
                   label={`${Math.round(importProgress)}%`} 
-                  variant="primary"
-                  className="mb-3"
+                  variant="primary" 
+                  animated
                 />
-                <div className="d-flex justify-content-between small text-muted">
-                  <div>Processados: {processedRows} de {totalRows}</div>
-                  <div>Erros: {errorRows}</div>
+                <div className="mt-3">
+                  <p>Registros processados: {processedRows} de {totalRows}</p>
+                  <p>Erros: {errorRows}</p>
                 </div>
               </Card.Body>
             </Card>
           )}
+          
+          {/* Seção de Ferramentas de Administração */}
+          <Card className="mb-4">
+            <Card.Header className="bg-light">
+              <h5 className="mb-0">Ferramentas de Administração</h5>
+            </Card.Header>
+            <Card.Body>
+              <Row>
+                <Col md={6}>
+                  <Card className="h-100">
+                    <Card.Body>
+                      <h6>Status do Banco de Dados</h6>
+                      {statusConfiguracao ? (
+                        <Alert variant={statusConfiguracao.success ? 'success' : 'danger'}>
+                          {statusConfiguracao.message}
+                        </Alert>
+                      ) : (
+                        <p>Verificando configuração do banco...</p>
+                      )}
+                      <Button 
+                        variant="outline-primary" 
+                        onClick={checkDatabase}
+                        className="me-2"
+                      >
+                        Verificar Banco
+                      </Button>
+                      <Button 
+                        variant="outline-secondary" 
+                        onClick={handleUpdateFunctions}
+                        disabled={atualizandoFuncoes}
+                      >
+                        {atualizandoFuncoes ? 'Atualizando...' : 'Atualizar Funções'}
+                      </Button>
+                    </Card.Body>
+                  </Card>
+                </Col>
+                <Col md={6}>
+                  <Card className="h-100">
+                    <Card.Body>
+                      <h6>Limpeza de Dados</h6>
+                      <p>
+                        Esta opção limpa todos os registros do banco de dados.
+                        Use com cautela, pois esta ação não pode ser desfeita.
+                      </p>
+                      <Button 
+                        variant="danger" 
+                        onClick={handleClearDatabase}
+                        disabled={loading}
+                      >
+                        Limpar Todos os Dados
+                      </Button>
+                    </Card.Body>
+                  </Card>
+                </Col>
+              </Row>
+            </Card.Body>
+          </Card>
           
           {data.length > 0 && columns.length > 0 && (
             <>
@@ -377,36 +618,76 @@ const ImportPage = () => {
                   <Form>
                     <Row className="mb-3">
                       <Col md={6}>
-                        <Form.Group controlId="batchSize">
-                          <Form.Label>Tamanho do Lote</Form.Label>
-                          <Form.Control
-                            type="number"
-                            min="100"
-                            max="1000"
-                            step="100"
-                            value={batchSize}
-                            onChange={(e) => setBatchSize(parseInt(e.target.value))}
-                          />
-                          <Form.Text className="text-muted">
-                            Número de registros a serem processados em cada lote.
-                          </Form.Text>
-                        </Form.Group>
-                      </Col>
-                      <Col md={6}>
-                        <Form.Group controlId="publicationDate">
+                        <Form.Group controlId="formImportDate">
                           <Form.Label>Data de Publicação</Form.Label>
                           <Form.Control
                             type="date"
                             value={publicationDate}
-                            onChange={(e) => setPublicationDate(e.target.value)}
-                            required
+                            onChange={(e) => {
+                              const novaData = e.target.value;
+                              setPublicationDate(novaData);
+                              
+                              // Validar a nova data
+                              const validacao = validarDataPublicacao(novaData);
+                              setValidacaoData(validacao);
+                              
+                              // Mostrar aviso se a data for inválida
+                              if (!validacao.valido) {
+                                setError(`Data inválida: ${validacao.message}`);
+                              } else if (validacao.warning) {
+                                setError(`Atenção: ${validacao.message}`);
+                              } else {
+                                setError(null);
+                              }
+                            }}
+                            isInvalid={validacaoData && !validacaoData.valido}
+                            isValid={validacaoData && validacaoData.valido && !validacaoData.warning}
+                          />
+                          {validacaoData && validacaoData.valido && validacaoData.warning && (
+                            <Form.Text className="text-warning">
+                              Atenção: {validacaoData.message}
+                            </Form.Text>
+                          )}
+                          {validacaoData && !validacaoData.valido && (
+                            <Form.Control.Feedback type="invalid">
+                              {validacaoData.message}
+                            </Form.Control.Feedback>
+                          )}
+                          <Form.Text className="text-muted">
+                            Data de publicação da tabela CMED. Esta data será associada aos preços importados.
+                          </Form.Text>
+                        </Form.Group>
+                      </Col>
+                      <Col md={6}>
+                        <Form.Group controlId="formBatchSize">
+                          <Form.Label>Tamanho do Lote de Importação</Form.Label>
+                          <Form.Control
+                            type="number"
+                            value={batchSize}
+                            onChange={(e) => setBatchSize(parseInt(e.target.value))}
+                            min={100}
+                            max={1000}
                           />
                           <Form.Text className="text-muted">
-                            Data de publicação da tabela CMED.
+                            Quantidade de registros processados por lote. Valores menores podem ser mais estáveis.
                           </Form.Text>
                         </Form.Group>
                       </Col>
                     </Row>
+                    
+                    {/* Seção de diagnóstico */}
+                    {diagnostico && (
+                      <div className="mb-4">
+                        <h6 className="mb-3">Diagnóstico do Arquivo</h6>
+                        <Alert variant={
+                          diagnostico.status === 'success' ? 'success' : 
+                          diagnostico.status === 'warning' ? 'warning' : 'danger'
+                        }>
+                          <Alert.Heading>{diagnostico.message}</Alert.Heading>
+                          <p>{diagnostico.detalhes}</p>
+                        </Alert>
+                      </div>
+                    )}
                     
                     <h6 className="mt-4 mb-3">Mapeamento de Colunas</h6>
                     <p className="text-muted small">
