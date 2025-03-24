@@ -6,6 +6,7 @@ import SearchPage from './pages/SearchPage';
 import ListPage from './pages/ListPage';
 import TestDatePage from './pages/TestDatePage';
 import LogsPage from './pages/LogsPage';
+import DashboardPage from './pages/DashboardPage';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
               <Nav.Link as={Link} to="/import">Importar Tabela</Nav.Link>
               <Nav.Link as={Link} to="/list">Listar Medicamentos</Nav.Link>
               <Nav.Link as={Link} to="/logs">Logs de Importação</Nav.Link>
+              <Nav.Link as={Link} to="/dashboard">Dashboard</Nav.Link>
               {/* Botões ocultados conforme solicitado
               <Nav.Link as={Link} to="/search">Pesquisar Medicamentos</Nav.Link>
               <Nav.Link as={Link} to="/test-date">Testar Data</Nav.Link>
@@ -35,6 +37,7 @@ function App() {
         <Route path="/search" element={<SearchPage />} />
         <Route path="/test-date" element={<TestDatePage />} />
         <Route path="/logs" element={<LogsPage />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/" element={<ImportPage />} />
       </Routes>
     </div>

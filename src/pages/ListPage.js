@@ -1,20 +1,20 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Container, Table, Spinner, Alert, Form, InputGroup, Button, 
   Pagination, Modal, Card, Tabs, Tab, Badge, ListGroup, Row, Col
 } from 'react-bootstrap';
-import { useNavigate } from 'react-router-dom';
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
-  Legend,
+  Legend
 } from 'chart.js';
-import { Line } from 'react-chartjs-2';
+import { Line, Bar } from 'react-chartjs-2';
 import { supabase } from '../supabaseClient';
 import { formatarDataBancoDados } from '../utils/DateUtils';
 import { jsPDF } from 'jspdf';
@@ -28,6 +28,7 @@ ChartJS.register(
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend
@@ -61,6 +62,11 @@ const ListPage = () => {
   const [selectedMedicamento, setSelectedMedicamento] = useState(null);
   const [priceHistory, setPriceHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [reajustesCMED, setReajustesCMED] = useState([]);
+  const [chartData, setChartData] = useState({
+    labels: [],
+    datasets: []
+  });
 
   // Novo estado para medicamentos selecionados
   const [selectedMedicamentos, setSelectedMedicamentos] = useState([]);
@@ -147,15 +153,53 @@ const ListPage = () => {
     try {
       setLoadingHistory(true);
       
-      const { data, error } = await supabase
+      // Buscar histórico de preços
+      const { data: precoData, error: precoError } = await supabase
         .from('precos_historico')
         .select('data_publicacao, pf_sem_impostos')
         .eq('medicamento_id', medicamentoId)
         .order('data_publicacao', { ascending: true });
         
-      if (error) throw error;
+      if (precoError) throw precoError;
       
-      setPriceHistory(data || []);
+      // Buscar reajustes CMED para comparação
+      const { data: reajustesData, error: reajustesError } = await supabase
+        .from('reajustes_anuais')
+        .select('*')
+        .order('ano', { ascending: true });
+        
+      if (reajustesError) throw reajustesError;
+      
+      // Calcular variações percentuais dos preços
+      let dadosComVariacao = [];
+      if (precoData && precoData.length > 0) {
+        dadosComVariacao = precoData.map((item, index) => {
+          if (index === 0) {
+            // Primeiro item não tem variação
+            return {
+              ...item,
+              variacao_percentual: 0,
+              ano: new Date(item.data_publicacao).getFullYear()
+            };
+          } else {
+            // Calcular variação em relação ao preço anterior
+            const precoAnterior = precoData[index - 1].pf_sem_impostos;
+            const precoAtual = item.pf_sem_impostos;
+            const variacao = precoAnterior > 0 
+              ? ((precoAtual - precoAnterior) / precoAnterior * 100)
+              : 0;
+            
+            return {
+              ...item,
+              variacao_percentual: parseFloat(variacao.toFixed(2)),
+              ano: new Date(item.data_publicacao).getFullYear()
+            };
+          }
+        });
+      }
+      
+      setPriceHistory(dadosComVariacao || []);
+      setReajustesCMED(reajustesData || []);
     } catch (err) {
       console.error('Erro ao buscar histórico de preços:', err);
       setError('Não foi possível carregar o histórico de preços.');
@@ -292,19 +336,27 @@ const ListPage = () => {
     return <Pagination>{items}</Pagination>;
   };
   
-  // Preparar dados para o gráfico de histórico de um medicamento
-  const chartData = {
-    labels: priceHistory.map(item => formatarDataBancoDados(item.data_publicacao)),
-    datasets: [
-      {
-        label: 'Preço Fábrica sem Impostos (R$)',
-        data: priceHistory.map(item => item.pf_sem_impostos),
-        borderColor: 'rgb(75, 192, 192)',
-        backgroundColor: 'rgba(75, 192, 192, 0.5)',
-      }
-    ],
-  };
-  
+  // Calcular dados para os gráficos quando o histórico de preços mudar
+  useEffect(() => {
+    if (priceHistory && priceHistory.length > 0) {
+      const labels = priceHistory.map(p => formatarDataBancoDados(p.data_publicacao));
+      
+      const data = {
+        labels,
+        datasets: [
+          {
+            label: 'Preço Fábrica (R$)',
+            data: priceHistory.map(p => p.pf_sem_impostos),
+            borderColor: 'rgb(53, 162, 235)',
+            backgroundColor: 'rgba(53, 162, 235, 0.5)',
+          }
+        ],
+      };
+      
+      setChartData(data);
+    }
+  }, [priceHistory]);
+
   // Preparar dados para o gráfico comparativo
   const prepareComparisonChartData = () => {
     if (!comparisonData || comparisonData.length === 0) return null;
@@ -344,30 +396,87 @@ const ListPage = () => {
     };
   };
   
+  // Opções para o gráfico de histórico de preços
   const chartOptions = {
     responsive: true,
+    maintainAspectRatio: false,
     plugins: {
       legend: {
         position: 'top',
       },
       title: {
         display: true,
-        text: 'Evolução de Preços',
+        text: 'Histórico de Preços',
       },
       tooltip: {
         callbacks: {
           label: function(context) {
-            return `${context.dataset.label}: R$ ${context.parsed.y.toFixed(2)}`;
+            return `${context.dataset.label}: R$ ${context.parsed.y.toFixed(2).replace('.', ',')}`;
           }
         }
       }
     },
     scales: {
       y: {
+        beginAtZero: false,
         ticks: {
           callback: function(value) {
-            return 'R$ ' + value.toFixed(2);
+            return 'R$ ' + value.toFixed(2).replace('.', ',');
           }
+        },
+        title: {
+          display: true,
+          text: 'Preço Fábrica'
+        }
+      }
+    }
+  };
+
+  // Opções para o gráfico de comparação
+  const comparisonChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: {
+      mode: 'index',
+      intersect: false,
+    },
+    plugins: {
+      legend: {
+        position: 'top',
+      },
+      title: {
+        display: true,
+        text: 'Comparação: Variação de Preço vs. Reajuste CMED',
+        font: {
+          size: 16
+        }
+      },
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+            let label = context.dataset.label || '';
+            if (label) {
+              label += ': ';
+            }
+            if (context.parsed.y !== null) {
+              label += context.parsed.y.toFixed(2) + '%';
+            }
+            return label;
+          }
+        }
+      }
+    },
+    scales: {
+      y: {
+        type: 'linear',
+        display: true,
+        position: 'left',
+        title: {
+          display: true,
+          text: 'Percentual (%)'
+        },
+        grid: {
+          color: 'rgba(0, 0, 0, 0.1)',
         }
       }
     }
@@ -694,6 +803,120 @@ const ListPage = () => {
                   </Alert>
                 )}
               </Tab>
+              <Tab eventKey="comparison" title="Comparação com Reajustes CMED">
+                {priceHistory.length > 1 ? (
+                  <div>
+                    <div className="mb-3">
+                      <Alert variant="info">
+                        Este gráfico compara a variação percentual do preço deste medicamento
+                        com os reajustes oficiais da CMED para cada ano.
+                      </Alert>
+                    </div>
+                    <div style={{ height: '400px' }}>
+                      <Bar 
+                        options={comparisonChartOptions} 
+                        data={{
+                          labels: priceHistory.filter(p => p.ano).map(p => p.ano.toString()),
+                          datasets: [
+                            {
+                              type: 'line',
+                              label: 'Variação de Preço do Medicamento (%)',
+                              data: priceHistory.filter(p => p.variacao_percentual !== undefined).map(p => p.variacao_percentual),
+                              borderColor: 'rgb(53, 162, 235)',
+                              backgroundColor: 'rgba(53, 162, 235, 0.5)',
+                              yAxisID: 'y',
+                              borderWidth: 2,
+                              tension: 0.1
+                            },
+                            {
+                              type: 'bar',
+                              label: 'Reajuste CMED Oficial (%)',
+                              data: priceHistory
+                                .filter(p => p.ano)
+                                .map(p => {
+                                  const reajusteAno = reajustesCMED.find(r => r.ano === p.ano);
+                                  return reajusteAno ? reajusteAno.percentual : null;
+                                }),
+                              borderColor: 'rgb(255, 99, 132)',
+                              backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                              yAxisID: 'y',
+                              borderRadius: 5
+                            }
+                          ]
+                        }} 
+                      />
+                    </div>
+                    
+                    <div className="mt-4">
+                      <h5>Análise de Variação</h5>
+                      <Table striped bordered hover size="sm">
+                        <thead>
+                          <tr>
+                            <th>Ano</th>
+                            <th>Variação do Medicamento (%)</th>
+                            <th>Reajuste CMED (%)</th>
+                            <th>Diferença</th>
+                            <th>Análise</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {priceHistory
+                            .filter(p => p.variacao_percentual !== undefined && p.ano)
+                            .map((p, index) => {
+                              const reajusteAno = reajustesCMED.find(r => r.ano === p.ano);
+                              const reajusteCMED = reajusteAno ? reajusteAno.percentual : null;
+                              const diferenca = reajusteCMED !== null 
+                                ? (p.variacao_percentual - reajusteCMED).toFixed(2)
+                                : '-';
+                              
+                              let analise = '-';
+                              let badgeVariant = 'secondary';
+                              
+                              if (reajusteCMED !== null) {
+                                const dif = p.variacao_percentual - reajusteCMED;
+                                if (Math.abs(dif) < 0.5) {
+                                  analise = 'Alinhado com CMED';
+                                  badgeVariant = 'success';
+                                } else if (dif > 0) {
+                                  analise = 'Acima do reajuste';
+                                  badgeVariant = 'danger';
+                                } else {
+                                  analise = 'Abaixo do reajuste';
+                                  badgeVariant = 'primary';
+                                }
+                              }
+                              
+                              return (
+                                <tr key={index}>
+                                  <td>{p.ano}</td>
+                                  <td>{p.variacao_percentual.toFixed(2)}%</td>
+                                  <td>{reajusteCMED !== null ? `${reajusteCMED.toFixed(2)}%` : '-'}</td>
+                                  <td>
+                                    {diferenca !== '-' && (
+                                      <>
+                                        {parseFloat(diferenca) > 0 ? (
+                                          <span className="text-danger">▲ </span>
+                                        ) : parseFloat(diferenca) < 0 ? (
+                                          <span className="text-success">▼ </span>
+                                        ) : null}
+                                        {diferenca}%
+                                      </>
+                                    )}
+                                  </td>
+                                  <td><Badge bg={badgeVariant}>{analise}</Badge></td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </Table>
+                    </div>
+                  </div>
+                ) : (
+                  <Alert variant="info">
+                    São necessários pelo menos dois registros de preço para mostrar a comparação.
+                  </Alert>
+                )}
+              </Tab>
               <Tab eventKey="table" title="Tabela">
                 {priceHistory.length > 0 ? (
                   <Table striped bordered hover>
@@ -701,6 +924,7 @@ const ListPage = () => {
                       <tr>
                         <th>Data de Publicação</th>
                         <th>Preço Fábrica sem Impostos (R$)</th>
+                        <th>Variação Percentual (%)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -708,6 +932,7 @@ const ListPage = () => {
                         <tr key={index}>
                           <td>{formatarDataBancoDados(item.data_publicacao)}</td>
                           <td>R$ {item.pf_sem_impostos.toFixed(2).replace('.', ',')}</td>
+                          <td>{item.variacao_percentual}%</td>
                         </tr>
                       ))}
                     </tbody>
