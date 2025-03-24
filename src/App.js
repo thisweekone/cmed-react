@@ -11,12 +11,9 @@ import ImportPage from './pages/ImportPage';
 import SearchPage from './pages/SearchPage';
 import TestDatePage from './pages/TestDatePage';
 import LogsPage from './pages/LogsPage';
-<<<<<<< HEAD
 import DashboardPage from './pages/DashboardPage';
-=======
 import ProfilePage from './pages/ProfilePage';
 import SubstanceAnalysisPage from './pages/SubstanceAnalysisPage';
->>>>>>> e381db1a6681eb40b6bdf8d26cfd15580cb639aa
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 function App() {
