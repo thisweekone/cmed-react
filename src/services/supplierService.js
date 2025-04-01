@@ -275,17 +275,131 @@ const supplierService = {
   /**
    * Busca o histórico de preços de um medicamento para um fornecedor
    * @param {string} medicineSupplierID ID da associação entre medicamento e fornecedor
-   * @returns {Promise<Array>} Histórico de preços
+   * @returns {Promise<Object>} Histórico de preços e dados da CMED
    */
   async getPriceHistory(medicineSupplierID) {
-    const { data, error } = await supabase
-      .from('price_history')
-      .select('*')
-      .eq('medicine_supplier_id', medicineSupplierID)
-      .order('quote_date', { ascending: false });
+    try {
+      // Primeiro, obter a associação medicine_supplier para saber qual é o medicamento
+      const { data: medicineSupplier, error: msError } = await supabase
+        .from('medicine_suppliers')
+        .select('*, medicamentos_base:medicine_id(*)')
+        .eq('id', medicineSupplierID)
+        .single();
+        
+      if (msError) throw msError;
       
-    if (error) throw error;
-    return data || [];
+      // Buscar o histórico de preços do fornecedor
+      const { data: priceHistory, error } = await supabase
+        .from('price_history')
+        .select('*')
+        .eq('medicine_supplier_id', medicineSupplierID)
+        .order('quote_date', { ascending: false });
+        
+      if (error) throw error;
+      
+      // Buscar os preços da CMED para este medicamento
+      const { data: cmedPrices, error: cmedError } = await supabase
+        .from('precos_historico')
+        .select('*')
+        .eq('medicamento_id', medicineSupplier.medicine_id)
+        .order('data_publicacao', { ascending: true });
+        
+      if (cmedError) {
+        console.error('Erro ao buscar preços CMED:', cmedError);
+        // Se houver erro, continuamos com os dados que temos
+        return {
+          priceHistory: priceHistory || [],
+          cmedPrices: [],
+          reajustesCMED: [],
+          medicineInfo: medicineSupplier?.medicamentos_base || {}
+        };
+      }
+      
+      // Buscar reajustes CMED para comparação
+      const { data: reajustesCMED, error: reajustesError } = await supabase
+        .from('reajustes_anuais')
+        .select('*')
+        .order('ano', { ascending: true });
+        
+      if (reajustesError) {
+        console.error('Erro ao buscar reajustes CMED:', reajustesError);
+        // Se houver erro, continuamos com os dados que temos
+        return {
+          priceHistory: priceHistory || [],
+          cmedPrices: cmedPrices || [],
+          reajustesCMED: [],
+          medicineInfo: medicineSupplier?.medicamentos_base || {}
+        };
+      }
+      
+      // Processar os dados da CMED para incluir o ano e calcular variações
+      const cmedProcessed = (cmedPrices || []).map((item, index) => {
+        const ano = new Date(item.data_publicacao).getFullYear();
+        let variacao_percentual = 0;
+        
+        if (index > 0 && cmedPrices[index - 1].pf_sem_impostos) {
+          const precoAnterior = parseFloat(cmedPrices[index - 1].pf_sem_impostos);
+          const precoAtual = parseFloat(item.pf_sem_impostos);
+          variacao_percentual = precoAnterior > 0 
+            ? ((precoAtual - precoAnterior) / precoAnterior * 100)
+            : 0;
+        }
+        
+        return {
+          ...item,
+          ano,
+          variacao_percentual: parseFloat(variacao_percentual.toFixed(2))
+        };
+      });
+      
+      // Adicionar a informação do preço CMED correspondente a cada preço do fornecedor
+      const enrichedPriceHistory = (priceHistory || []).map(item => {
+        const quoteDate = new Date(item.quote_date);
+        
+        // Encontrar o preço CMED mais recente em relação à data da cotação
+        let cmedPrice = null;
+        for (let i = 0; i < cmedProcessed.length; i++) {
+          const cmedDate = new Date(cmedProcessed[i].data_publicacao);
+          if (cmedDate <= quoteDate) {
+            cmedPrice = cmedProcessed[i];
+          } else {
+            break; // Já passamos da data da cotação
+          }
+        }
+        
+        let acimaCMED = false;
+        let diferencaPercentual = 0;
+        
+        if (cmedPrice && cmedPrice.pf_sem_impostos) {
+          const precoCMED = parseFloat(cmedPrice.pf_sem_impostos);
+          const precoFornecedor = parseFloat(item.price);
+          
+          diferencaPercentual = precoCMED > 0 
+            ? ((precoFornecedor - precoCMED) / precoCMED * 100)
+            : 0;
+            
+          acimaCMED = precoFornecedor > precoCMED;
+        }
+        
+        return {
+          ...item,
+          cmed_price: cmedPrice ? cmedPrice.pf_sem_impostos : null,
+          cmed_date: cmedPrice ? cmedPrice.data_publicacao : null,
+          acima_cmed: acimaCMED,
+          diferenca_percentual: parseFloat(diferencaPercentual.toFixed(2))
+        };
+      });
+      
+      return {
+        priceHistory: enrichedPriceHistory || [],
+        cmedPrices: cmedProcessed || [],
+        reajustesCMED: reajustesCMED || [],
+        medicineInfo: medicineSupplier?.medicamentos_base || {}
+      };
+    } catch (error) {
+      console.error('Erro ao buscar histórico de preços:', error);
+      throw error;
+    }
   },
   
   /**

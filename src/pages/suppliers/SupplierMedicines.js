@@ -12,7 +12,9 @@ import {
   InputGroup, 
   Spinner, 
   Alert, 
-  Badge 
+  Badge,
+  Nav,
+  Tab
 } from 'react-bootstrap';
 import { 
   ArrowLeft, 
@@ -26,6 +28,12 @@ import {
 import { supplierService } from '../../services/supplierService';
 import { supabase } from '../../supabaseClient';
 import { formatCurrency } from '../../utils/formatters';
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend } from 'chart.js';
+import { Line, Bar } from 'react-chartjs-2';
+import { icmsAliquotas } from '../../data/icmsAliquotas';
+
+// Registrar os componentes necessários do Chart.js
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend);
 
 const SupplierMedicines = () => {
   const { id } = useParams();
@@ -41,12 +49,112 @@ const SupplierMedicines = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [newPrice, setNewPrice] = useState('');
   const [priceNotes, setPriceNotes] = useState('');
+  const [priceDate, setPriceDate] = useState('');
   const [currentMedicineSupplier, setCurrentMedicineSupplier] = useState(null);
   const [priceHistory, setPriceHistory] = useState([]);
+  const [cmedPrices, setCmedPrices] = useState([]);
+  const [reajustesCMED, setReajustesCMED] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [selectedEstado, setSelectedEstado] = useState('SC');
+  const [icmsAliquota, setIcmsAliquota] = useState(17);
+  
+  // Opções para o gráfico de preços
+  const priceChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'top',
+      },
+      title: {
+        display: true,
+        text: 'Comparação de Preços',
+      },
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+            let label = context.dataset.label || '';
+            if (label) {
+              label += ': ';
+            }
+            if (context.parsed.y !== null) {
+              label += 'R$ ' + context.parsed.y.toFixed(2);
+            }
+            return label;
+          }
+        }
+      }
+    },
+    scales: {
+      y: {
+        beginAtZero: false,
+        title: {
+          display: true,
+          text: 'Preço (R$)'
+        }
+      },
+      x: {
+        title: {
+          display: true,
+          text: 'Data'
+        }
+      }
+    }
+  };
+  
+  // Opções para o gráfico de variação percentual
+  const variationChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'top',
+      },
+      title: {
+        display: true,
+        text: 'Comparação com Reajustes CMED',
+      },
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+            let label = context.dataset.label || '';
+            if (label) {
+              label += ': ';
+            }
+            if (context.parsed.y !== null) {
+              label += context.parsed.y.toFixed(2) + '%';
+            }
+            return label;
+          }
+        }
+      }
+    },
+    scales: {
+      y: {
+        beginAtZero: false,
+        title: {
+          display: true,
+          text: 'Variação (%)'
+        }
+      },
+      x: {
+        title: {
+          display: true,
+          text: 'Ano'
+        }
+      }
+    }
+  };
+
+  useEffect(() => {
+    const estado = icmsAliquotas.find(e => e.uf === selectedEstado);
+    if (estado) {
+      setIcmsAliquota(estado.aliquota);
+    }
+  }, [selectedEstado]);
 
   useEffect(() => {
     loadData();
@@ -154,21 +262,33 @@ const SupplierMedicines = () => {
     setCurrentMedicineSupplier(medicineSupplier);
     setNewPrice(medicineSupplier.last_quote_price?.toString() || '');
     setPriceNotes('');
+    
+    // Formatar a data para o formato YYYY-MM-DD para o input date
+    const currentDate = new Date().toISOString().split('T')[0];
+    const lastQuoteDate = medicineSupplier.last_quote_date ? 
+      new Date(medicineSupplier.last_quote_date).toISOString().split('T')[0] : 
+      currentDate;
+    
+    setPriceDate(lastQuoteDate);
     setShowPriceModal(true);
   };
 
   const handleOpenHistoryModal = async (medicineSupplier) => {
     setCurrentMedicineSupplier(medicineSupplier);
+    setShowHistoryModal(true);
     setLoadingHistory(true);
-    setError(null);
+    setPriceHistory([]);
+    setCmedPrices([]);
+    setReajustesCMED([]);
     
     try {
-      const historyData = await supplierService.getPriceHistory(medicineSupplier.id);
-      setPriceHistory(historyData);
-      setShowHistoryModal(true);
+      const result = await supplierService.getPriceHistory(medicineSupplier.id);
+      setPriceHistory(result.priceHistory);
+      setCmedPrices(result.cmedPrices);
+      setReajustesCMED(result.reajustesCMED);
     } catch (error) {
       console.error('Erro ao carregar histórico de preços:', error);
-      setError('Erro ao carregar histórico de preços: ' + error.message);
+      setError('Não foi possível carregar o histórico de preços. Tente novamente mais tarde.');
     } finally {
       setLoadingHistory(false);
     }
@@ -183,9 +303,12 @@ const SupplierMedicines = () => {
       
       const price = parseFloat(newPrice.replace(',', '.'));
       
+      // Formatar a data para ISO string para o banco de dados
+      const formattedDate = priceDate ? new Date(priceDate + 'T12:00:00').toISOString() : new Date().toISOString();
+      
       await supplierService.updateMedicine(currentMedicineSupplier.id, {
         last_quote_price: price,
-        last_quote_date: new Date().toISOString(),
+        last_quote_date: formattedDate,
         notes: priceNotes || null
       });
       
@@ -194,7 +317,7 @@ const SupplierMedicines = () => {
       // Atualiza a lista de medicamentos
       setMedicines(prev => prev.map(m => 
         m.id === currentMedicineSupplier.id 
-          ? { ...m, last_quote_price: price, last_quote_date: new Date().toISOString() } 
+          ? { ...m, last_quote_price: price, last_quote_date: formattedDate } 
           : m
       ));
       
@@ -462,29 +585,246 @@ const SupplierMedicines = () => {
                 </Alert>
               )}
               
+              <Form.Group className="mb-3">
+                <Form.Label><strong>Comparar com ICMS do estado:</strong></Form.Label>
+                <div className="d-flex align-items-center">
+                  <Form.Select 
+                    value={selectedEstado}
+                    onChange={(e) => setSelectedEstado(e.target.value)}
+                    className="me-2"
+                    style={{ maxWidth: '200px' }}
+                  >
+                    {icmsAliquotas.map(estado => (
+                      <option key={estado.uf} value={estado.uf}>
+                        {estado.estado} ({estado.uf}) - {estado.aliquota}%
+                      </option>
+                    ))}
+                  </Form.Select>
+                  <Badge bg="info">Alíquota: {icmsAliquota}%</Badge>
+                </div>
+                <Form.Text className="text-muted">
+                  Os preços CMED serão ajustados conforme a alíquota do estado selecionado.
+                </Form.Text>
+              </Form.Group>
+              
               {priceHistory.length === 0 ? (
                 <Alert variant="warning">
                   Não há histórico de preços para este medicamento.
                 </Alert>
               ) : (
-                <Table striped bordered hover responsive>
-                  <thead>
-                    <tr>
-                      <th>Data</th>
-                      <th>Preço</th>
-                      <th>Observações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {priceHistory.map(item => (
-                      <tr key={item.id}>
-                        <td>{formatDate(item.quote_date)}</td>
-                        <td>{formatCurrency(item.price)}</td>
-                        <td>{item.notes || '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
+                <Tab.Container defaultActiveKey="table">
+                  <Nav variant="tabs" className="mb-3">
+                    <Nav.Item>
+                      <Nav.Link eventKey="table">Tabela de Histórico</Nav.Link>
+                    </Nav.Item>
+                    <Nav.Item>
+                      <Nav.Link eventKey="chart">Gráfico de Preços</Nav.Link>
+                    </Nav.Item>
+                  </Nav>
+                  
+                  <Tab.Content>
+                    <Tab.Pane eventKey="table">
+                      <Table striped bordered hover responsive>
+                        <thead>
+                          <tr>
+                            <th>Data</th>
+                            <th>Preço</th>
+                            <th>Preço CMED (PF)</th>
+                            <th>Preço CMED + {icmsAliquota}%</th>
+                            <th>Diferença</th>
+                            <th>Observações</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {priceHistory.map(item => {
+                            const precoCMED = item.cmed_price ? parseFloat(item.cmed_price) : 0;
+                            const precoCMEDComICMS = precoCMED > 0 ? precoCMED / (1 - (icmsAliquota / 100)) : 0;
+                            const precoFornecedor = parseFloat(item.price);
+                            
+                            // Comparação com o preço CMED + ICMS
+                            const acimaCMEDComICMS = precoCMEDComICMS > 0 && precoFornecedor > precoCMEDComICMS;
+                            const diferencaPercentualComICMS = precoCMEDComICMS > 0 
+                              ? ((precoFornecedor - precoCMEDComICMS) / precoCMEDComICMS * 100)
+                              : 0;
+                              
+                            return (
+                              <tr key={item.id} className={acimaCMEDComICMS ? 'table-danger' : ''}>
+                                <td>{formatDate(item.quote_date)}</td>
+                                <td>{formatCurrency(item.price)}</td>
+                                <td>
+                                  {item.cmed_price ? (
+                                    <>
+                                      {formatCurrency(item.cmed_price)}
+                                      <div className="small text-muted">
+                                        {formatDate(item.cmed_date)}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <span className="text-muted">Não disponível</span>
+                                  )}
+                                </td>
+                                <td>
+                                  {item.cmed_price ? (
+                                    <>
+                                      {formatCurrency(precoCMEDComICMS)}
+                                      <div className="small text-muted">
+                                        PF + ICMS {icmsAliquota}%
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <span className="text-muted">Não disponível</span>
+                                  )}
+                                </td>
+                                <td>
+                                  {item.cmed_price ? (
+                                    <div className={acimaCMEDComICMS ? 'text-danger fw-bold' : 'text-success'}>
+                                      {diferencaPercentualComICMS > 0 ? '+' : ''}
+                                      {diferencaPercentualComICMS.toFixed(2)}%
+                                      {acimaCMEDComICMS && (
+                                        <Badge bg="danger" className="ms-2">Acima da CMED</Badge>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-muted">-</span>
+                                  )}
+                                </td>
+                                <td>{item.notes || '-'}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </Table>
+                    </Tab.Pane>
+                    
+                    <Tab.Pane eventKey="chart">
+                      <Alert variant="info" className="mb-3">
+                        Este gráfico mostra a evolução dos preços do fornecedor comparados com os preços da CMED + ICMS ({icmsAliquota}%) para {icmsAliquotas.find(e => e.uf === selectedEstado)?.estado}.
+                        <strong className="ms-2">Destaque em vermelho</strong> quando o preço do fornecedor está acima do preço CMED + ICMS.
+                      </Alert>
+                      <div style={{ height: '400px' }}>
+                        <Line 
+                          options={{
+                            ...priceChartOptions,
+                            plugins: {
+                              ...priceChartOptions.plugins,
+                              tooltip: {
+                                ...priceChartOptions.plugins.tooltip,
+                                callbacks: {
+                                  ...priceChartOptions.plugins.tooltip.callbacks,
+                                  label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                      label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                      label += 'R$ ' + context.parsed.y.toFixed(2);
+                                      
+                                      // Adicionar informação sobre a diferença com a CMED
+                                      if (context.dataset.label === 'Preço do Fornecedor' && context.raw.cmedPriceICMS) {
+                                        const diff = ((context.parsed.y - context.raw.cmedPriceICMS) / context.raw.cmedPriceICMS * 100).toFixed(2);
+                                        const signal = diff > 0 ? '+' : '';
+                                        label += ` (${signal}${diff}% em relação à CMED + ICMS)`;
+                                      }
+                                    }
+                                    return label;
+                                  }
+                                }
+                              }
+                            }
+                          }}
+                          data={{
+                            labels: priceHistory.map(item => formatDate(item.quote_date)),
+                            datasets: [
+                              {
+                                label: 'Preço do Fornecedor',
+                                data: priceHistory.map(item => {
+                                  const precoCMED = item.cmed_price ? parseFloat(item.cmed_price) : 0;
+                                  const precoCMEDComICMS = precoCMED > 0 ? precoCMED / (1 - (icmsAliquota / 100)) : 0;
+                                  const precoFornecedor = parseFloat(item.price);
+                                  const acimaCMEDComICMS = precoCMEDComICMS > 0 && precoFornecedor > precoCMEDComICMS;
+                                  
+                                  return {
+                                    x: formatDate(item.quote_date),
+                                    y: precoFornecedor,
+                                    cmedPrice: precoCMED,
+                                    cmedPriceICMS: precoCMEDComICMS,
+                                    acimaCMED: acimaCMEDComICMS
+                                  };
+                                }),
+                                borderColor: 'rgb(75, 192, 192)',
+                                backgroundColor: priceHistory.map(item => {
+                                  const precoCMED = item.cmed_price ? parseFloat(item.cmed_price) : 0;
+                                  const precoCMEDComICMS = precoCMED > 0 ? precoCMED / (1 - (icmsAliquota / 100)) : 0;
+                                  const precoFornecedor = parseFloat(item.price);
+                                  const acimaCMEDComICMS = precoCMEDComICMS > 0 && precoFornecedor > precoCMEDComICMS;
+                                  
+                                  return acimaCMEDComICMS ? 'rgba(255, 99, 132, 0.5)' : 'rgba(75, 192, 192, 0.5)';
+                                }),
+                                pointBackgroundColor: priceHistory.map(item => {
+                                  const precoCMED = item.cmed_price ? parseFloat(item.cmed_price) : 0;
+                                  const precoCMEDComICMS = precoCMED > 0 ? precoCMED / (1 - (icmsAliquota / 100)) : 0;
+                                  const precoFornecedor = parseFloat(item.price);
+                                  const acimaCMEDComICMS = precoCMEDComICMS > 0 && precoFornecedor > precoCMEDComICMS;
+                                  
+                                  return acimaCMEDComICMS ? 'rgb(255, 99, 132)' : 'rgb(75, 192, 192)';
+                                }),
+                                pointBorderColor: priceHistory.map(item => {
+                                  const precoCMED = item.cmed_price ? parseFloat(item.cmed_price) : 0;
+                                  const precoCMEDComICMS = precoCMED > 0 ? precoCMED / (1 - (icmsAliquota / 100)) : 0;
+                                  const precoFornecedor = parseFloat(item.price);
+                                  const acimaCMEDComICMS = precoCMEDComICMS > 0 && precoFornecedor > precoCMEDComICMS;
+                                  
+                                  return acimaCMEDComICMS ? 'rgb(255, 99, 132)' : 'rgb(75, 192, 192)';
+                                }),
+                                pointRadius: 6,
+                                tension: 0.1
+                              },
+                              {
+                                label: 'Preço CMED + ICMS',
+                                data: priceHistory
+                                  .filter(item => item.cmed_price)
+                                  .map(item => {
+                                    const precoCMED = parseFloat(item.cmed_price);
+                                    const precoCMEDComICMS = precoCMED / (1 - (icmsAliquota / 100));
+                                    
+                                    return {
+                                      x: formatDate(item.quote_date),
+                                      y: precoCMEDComICMS
+                                    };
+                                  }),
+                                borderColor: 'rgb(153, 102, 255)',
+                                backgroundColor: 'rgba(153, 102, 255, 0.5)',
+                                borderDash: [5, 5],
+                                pointRadius: 4,
+                                tension: 0.1
+                              }
+                            ]
+                          }}
+                        />
+                      </div>
+                      
+                      <div className="mt-4">
+                        <h5>Legenda</h5>
+                        <div className="d-flex flex-wrap gap-3 mt-2">
+                          <div className="d-flex align-items-center">
+                            <div style={{ width: '20px', height: '20px', backgroundColor: 'rgb(75, 192, 192)', borderRadius: '50%', marginRight: '8px' }}></div>
+                            <span>Preço dentro do limite CMED + ICMS</span>
+                          </div>
+                          <div className="d-flex align-items-center">
+                            <div style={{ width: '20px', height: '20px', backgroundColor: 'rgb(255, 99, 132)', borderRadius: '50%', marginRight: '8px' }}></div>
+                            <span>Preço acima do limite CMED + ICMS</span>
+                          </div>
+                          <div className="d-flex align-items-center">
+                            <div style={{ width: '20px', height: '2px', backgroundColor: 'rgb(153, 102, 255)', marginRight: '8px', position: 'relative' }}>
+                              <div style={{ position: 'absolute', width: '100%', height: '100%', borderTop: '2px dashed rgb(153, 102, 255)' }}></div>
+                            </div>
+                            <span>Preço CMED + ICMS ({icmsAliquota}%)</span>
+                          </div>
+                        </div>
+                      </div>
+                    </Tab.Pane>
+                  </Tab.Content>
+                </Tab.Container>
               )}
             </>
           )}
@@ -527,6 +867,18 @@ const SupplierMedicines = () => {
                     onChange={(e) => setNewPrice(e.target.value)}
                   />
                 </InputGroup>
+              </Form.Group>
+              
+              <Form.Group className="mb-3">
+                <Form.Label>Data da Cotação</Form.Label>
+                <Form.Control
+                  type="date"
+                  value={priceDate}
+                  onChange={(e) => setPriceDate(e.target.value)}
+                />
+                <Form.Text className="text-muted">
+                  Selecione a data em que este preço foi cotado. Isso ajudará a acompanhar a evolução dos preços ao longo do tempo.
+                </Form.Text>
               </Form.Group>
               
               <Form.Group className="mb-3">
