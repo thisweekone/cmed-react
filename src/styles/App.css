@@ -13,3 +13,34 @@
   text-align: center;
   margin-top: 40px;
 }
+
+/* Novo layout com sidebar */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow-x: hidden;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: calc(100vh - 56px);
+  overflow-y: auto;
+}
+
+.main-content {
+  overflow-y: auto;
+  height: calc(100vh - 56px);
+}
+
+/* Ajustes para o offcanvas em telas pequenas */
+.sidebar-offcanvas {
+  width: 250px !important;
+}
+
+@media (max-width: 991.98px) {
+  .main-content {
+    width: 100%;
+  }
+}
