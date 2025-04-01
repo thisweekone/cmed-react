@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { 
   Container, Typography, Paper, Button, 
   Table, TableBody, TableCell, TableContainer, 
@@ -30,14 +30,15 @@ const QuotesList = () => {
     message: '',
     severity: 'info'
   });
-  const navigate = useNavigate();
 
   useEffect(() => {
     loadQuotes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     filterQuotes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm, statusFilter, quotes, tabValue]);
 
   const loadQuotes = async () => {

@@ -16,7 +16,6 @@ import {
   Business as SupplierIcon,
   AttachMoney as MoneyIcon,
   Person as PersonIcon,
-  HealthAndSafety as HealthIcon,
   CalendarToday as CalendarIcon,
   Save as SaveIcon
 } from '@mui/icons-material';
@@ -41,6 +40,7 @@ const QuoteDetails = () => {
 
   useEffect(() => {
     loadQuote();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const loadQuote = async () => {

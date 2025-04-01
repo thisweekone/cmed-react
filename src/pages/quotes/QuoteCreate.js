@@ -51,6 +51,7 @@ const QuoteCreate = () => {
       setSupplierOptions([]);
       setSelectedSupplier(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedMedicine]);
 
   const searchMedicines = async (term) => {

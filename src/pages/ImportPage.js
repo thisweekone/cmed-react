@@ -170,7 +170,8 @@ const ImportPage = () => {
       setPublicationDate(dataHoje);
     }
     
-    fileColumns.forEach(col => {
+    for (let i = 0; i < fileColumns.length; i++) {
+      const col = fileColumns[i];
       // Tenta fazer um mapeamento automático por correspondência aproximada
       const normalizedCol = col.toLowerCase();
       if (normalizedCol.includes('subst') || normalizedCol.includes('princip')) {
@@ -196,7 +197,7 @@ const ImportPage = () => {
       } else if (normalizedCol.includes('pf') && (normalizedCol.includes('sem') || normalizedCol.includes('0%'))) {
         initialMappings['pf_sem_impostos'] = col;
       }
-    });
+    }
     
     setMappings(initialMappings);
     
@@ -260,7 +261,13 @@ const ImportPage = () => {
                            'codigo_ggrem', 'registro', 'ean_1', 'classe_terapeutica', 
                            'tipo_de_produto', 'regime_de_preco', 'pf_sem_impostos'];
     
-    const missingFields = requiredFields.filter(field => !mappings[field]);
+    const missingFields = [];
+    for (let i = 0; i < requiredFields.length; i++) {
+      const field = requiredFields[i];
+      if (!mappings[field]) {
+        missingFields.push(field);
+      }
+    }
     
     if (missingFields.length > 0) {
       setError(`Os seguintes campos são obrigatórios: ${missingFields.join(', ')}`);
@@ -347,13 +354,17 @@ const ImportPage = () => {
         console.log(`Processando lote ${batchIndex + 1} com ${batch.length} registros`);
         
         // Criar array de promessas para inserção em paralelo (limitada)
-        const batchPromises = batch.map(row => processRow(row, importId));
+        const batchPromises = [];
+        for (let i = 0; i < batch.length; i++) {
+          batchPromises.push(processRow(batch[i], importId));
+        }
         
         // Aguardar conclusão do lote atual
         const results = await Promise.allSettled(batchPromises);
         
         // Processar resultados deste lote
-        results.forEach(result => {
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
           processed++;
           if (result.status === 'fulfilled') {
             importados++;
@@ -369,7 +380,7 @@ const ImportPage = () => {
               });
             }
           }
-        });
+        }
         
         // Atualizar progresso e contadores
         const progress = (processed / dataToImport.length) * 100;
@@ -402,7 +413,7 @@ const ImportPage = () => {
     }
   };
 
-  // Função para buscar todos os dados do arquivo (usado quando temos apenas amostra)
+  /* Função para buscar todos os dados do arquivo (usado quando temos apenas amostra) - não utilizada atualmente
   const fetchAllDataForImport = async () => {
     setImportStatus('Buscando dados completos do arquivo...');
     // Verificar se temos os dados completos ou apenas amostra
@@ -412,6 +423,7 @@ const ImportPage = () => {
     // Retornar os dados disponíveis (este é um fallback)
     return data;
   };
+  */
 
   // Processar uma única linha de dados
   const processRow = async (row, importId) => {
@@ -707,8 +719,8 @@ const ImportPage = () => {
                         { id: 'tipo_de_produto', label: 'Tipo de Produto' },
                         { id: 'regime_de_preco', label: 'Regime de Preço' },
                         { id: 'pf_sem_impostos', label: 'PF sem Impostos' }
-                      ].map(field => (
-                        <Col md={6} lg={4} key={field.id} className="mb-3">
+                      ].map((field, index) => (
+                        <Col md={6} lg={4} key={index} className="mb-3">
                           <Form.Group controlId={`mapping-${field.id}`}>
                             <Form.Label>{field.label}</Form.Label>
                             <Form.Select

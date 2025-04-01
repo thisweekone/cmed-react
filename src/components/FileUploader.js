@@ -439,7 +439,7 @@ const FileUploader = ({ onFileLoaded }) => {
         workerRef.current = null;
       }
     };
-  }, [file, onFileLoaded]);
+  }, [file, onFileLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFileChange = (event) => {
     const selectedFile = event.target.files[0];

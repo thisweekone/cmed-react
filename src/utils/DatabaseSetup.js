@@ -173,7 +173,7 @@ export const verificarConfiguracaoBanco = async () => {
     }
     
     // Verificar se as funções estão instaladas
-    const { data: funcoes, error: erroFuncoes } = await supabase
+    const { error: erroFuncoes } = await supabase
       .rpc('test_date_conversion', { input_date: '2025-01-01' });
       
     if (erroFuncoes) {

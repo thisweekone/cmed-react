@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { useNavigate } from 'react-router-dom';
+// import { useNavigate } from 'react-router-dom';
 import { supplierService } from '../services/supplierService';
 import {
   Container,
@@ -37,8 +37,8 @@ import {
   TrendingDown as TrendingDownIcon,
   Balance as BalanceIcon,
   Info as InfoIcon,
-  Analytics as AnalyticsIcon,
-  Chat as ChatIcon,
+  // Analytics as AnalyticsIcon,
+  // Chat as ChatIcon,
   Store as StoreIcon,
   LocalOffer as LocalOfferIcon
 } from '@mui/icons-material';
@@ -78,7 +78,6 @@ const StatCard = ({ title, value, icon: Icon, color, subtitle }) => (
 );
 
 const SubstanceAnalysisPage = () => {
-  const navigate = useNavigate();
   const [substances, setSubstances] = useState([]);
   const [selectedSubstance, setSelectedSubstance] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -103,19 +102,22 @@ const SubstanceAnalysisPage = () => {
     message: '',
     severity: 'info'
   });
-  const [error, setError] = useState(null);
+  // const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatContext, setChatContext] = useState(null);
+  // const [chatOpen, setChatOpen] = useState(false);
+  // const [chatContext, setChatContext] = useState(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const isTablet = useMediaQuery(theme.breakpoints.down('md'));
+  // const isTablet = useMediaQuery(theme.breakpoints.down('md'));
 
+  /* Função para abrir o chat de análise - não utilizada atualmente
   const handleChatOpen = (type, value) => {
     setChatContext({ type, value });
     setChatOpen(true);
   };
+  */
 
+  /* Função para renderizar cartões de estatísticas - não utilizada atualmente
   const renderStatCard = (title, value) => (
     <Card sx={{ height: '100%', boxShadow: 3, borderRadius: 2 }}>
       <CardContent sx={{ p: 3 }}>
@@ -128,9 +130,11 @@ const SubstanceAnalysisPage = () => {
       </CardContent>
     </Card>
   );
+  */
 
   useEffect(() => {
     loadSubstances();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -138,12 +142,13 @@ const SubstanceAnalysisPage = () => {
       loadAnalysis(selectedSubstance);
       loadSuppliers(selectedSubstance);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSubstance]);
 
   const loadSubstances = async () => {
     try {
       setLoading(true);
-      setError(null);
+      // setError(null);
 
       let query = supabase
         .from('medicamentos_base')
@@ -169,7 +174,7 @@ const SubstanceAnalysisPage = () => {
       setSubstances(uniqueSubstances);
     } catch (error) {
       console.error('Erro ao carregar substâncias:', error);
-      setError(error.message);
+      // setError(error.message);
       setSnackbar({
         open: true,
         message: 'Erro ao carregar lista de substâncias: ' + error.message,
@@ -186,7 +191,7 @@ const SubstanceAnalysisPage = () => {
     
     try {
       setLoading(true);
-      setError(null);
+      // setError(null);
 
       console.log('Buscando medicamentos para:', substance);
 
@@ -321,7 +326,7 @@ const SubstanceAnalysisPage = () => {
       
     } catch (error) {
       console.error('Erro ao carregar análise:', error);
-      setError(error.message);
+      // setError(error.message);
       setSnackbar({
         open: true,
         message: 'Erro ao carregar análise: ' + error.message,
@@ -337,14 +342,14 @@ const SubstanceAnalysisPage = () => {
     
     try {
       setLoadingSuppliers(true);
-      setError(null);
+      // setError(null);
       
       const suppliers = await supplierService.getSuppliersBySubstance(substance);
       setSuppliersList(suppliers);
       
     } catch (error) {
       console.error('Erro ao carregar fornecedores:', error);
-      setError('Erro ao carregar fornecedores: ' + error.message);
+      // setError('Erro ao carregar fornecedores: ' + error.message);
       setSnackbar({
         open: true,
         message: 'Erro ao carregar fornecedores: ' + error.message,
