@@ -23,7 +23,9 @@ import {
   Pencil, 
   CurrencyDollar, 
   Search, 
-  Building 
+  Building,
+  ClockHistory,
+  GraphUp
 } from 'react-bootstrap-icons';
 import { supplierService } from '../../services/supplierService';
 import { supabase } from '../../supabaseClient';
@@ -459,7 +461,16 @@ const SupplierMedicines = () => {
                             onClick={() => handleOpenHistoryModal(item)}
                             title="Histórico de preços"
                           >
-                            <i className="bi bi-clock-history"></i>
+                            <ClockHistory />
+                          </Button>
+                          <Button 
+                            variant="outline-success" 
+                            size="sm" 
+                            as={Link}
+                            to={`/medicines/${item.medicine_id}/suppliers/${id}/prices`}
+                            title="Análise detalhada de preços"
+                          >
+                            <GraphUp />
                           </Button>
                           <Button 
                             variant="outline-danger" 

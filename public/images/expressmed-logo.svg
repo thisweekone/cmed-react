@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300">
+  <style>
+    .blue-bg { fill: #1E88E5; }
+    .white-cross { fill: white; }
+    .text-express { fill: #1E88E5; font-family: Arial, sans-serif; font-weight: bold; font-size: 48px; }
+    .text-med { fill: #616161; font-family: Arial, sans-serif; font-weight: bold; font-size: 48px; }
+  </style>
+  <g>
+    <path class="blue-bg" d="M150,30 L245,100 L245,200 L150,270 L55,200 L55,100 Z" rx="20" ry="20" />
+    <path class="white-cross" d="M130,90 L130,130 L90,130 L90,170 L130,170 L130,210 L170,210 L170,170 L210,170 L210,130 L170,130 L170,90 Z" />
+  </g>
+  <text x="30" y="330" class="text-express">EXPRESS</text>
+  <text x="110" y="380" class="text-med">MED</text>
+</svg>

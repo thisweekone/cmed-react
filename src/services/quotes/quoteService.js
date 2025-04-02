@@ -6,26 +6,68 @@ import { supabase } from '../supabaseClient';
 export const quoteService = {
   /**
    * Busca todos os orçamentos
+   * @param {Object} options Opções de filtro e ordenação
    * @returns {Promise<Array>} Lista de orçamentos
    */
-  async getAll() {
+  async getAll(options = {}) {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('quotes')
         .select(`
           *,
-          medicamentos_base:medicine_id (
+          patients:patient_id (
             id,
-            nome_produto,
-            apresentacao,
-            laboratorio
+            name,
+            document
           ),
-          suppliers:supplier_id (
+          insurance_providers:insurance_provider_id (
             id,
             name
+          ),
+          quote_items:quote_items (
+            id,
+            medicine_id,
+            supplier_id,
+            quantity,
+            unit_price,
+            margin_percentage,
+            final_price,
+            medicamentos_base:medicine_id (
+              id,
+              nome_produto,
+              apresentacao,
+              laboratorio
+            ),
+            suppliers:supplier_id (
+              id,
+              name
+            )
           )
-        `)
-        .order('created_at', { ascending: false });
+        `);
+      
+      // Aplicar filtros se fornecidos
+      if (options.search) {
+        query = query.or(`patients.name.ilike.%${options.search}%,insurance_providers.name.ilike.%${options.search}%`);
+      }
+      
+      if (options.status) {
+        query = query.eq('status', options.status);
+      }
+      
+      if (options.patientId) {
+        query = query.eq('patient_id', options.patientId);
+      }
+      
+      if (options.insuranceProviderId) {
+        query = query.eq('insurance_provider_id', options.insuranceProviderId);
+      }
+      
+      // Aplicar ordenação
+      const orderColumn = options.orderBy || 'created_at';
+      const orderDirection = options.orderDirection || { ascending: false };
+      query = query.order(orderColumn, orderDirection);
+      
+      const { data, error } = await query;
       
       if (error) throw error;
       return data || [];
@@ -46,17 +88,39 @@ export const quoteService = {
         .from('quotes')
         .select(`
           *,
-          medicamentos_base:medicine_id (
-            id,
-            nome_produto,
-            apresentacao,
-            laboratorio
-          ),
-          suppliers:supplier_id (
+          patients:patient_id (
             id,
             name,
+            document,
+            phone,
             email,
-            phone
+            address
+          ),
+          insurance_providers:insurance_provider_id (
+            id,
+            name,
+            code
+          ),
+          quote_items:quote_items (
+            id,
+            medicine_id,
+            supplier_id,
+            quantity,
+            unit_price,
+            margin_percentage,
+            final_price,
+            medicamentos_base:medicine_id (
+              id,
+              nome_produto,
+              apresentacao,
+              laboratorio
+            ),
+            suppliers:supplier_id (
+              id,
+              name,
+              email,
+              phone
+            )
           )
         `)
         .eq('id', id)
@@ -71,59 +135,47 @@ export const quoteService = {
   },
 
   /**
-   * Cria um novo orçamento
+   * Cria um novo orçamento com seus itens
    * @param {Object} quote Dados do orçamento
+   * @param {Array} quoteItems Itens do orçamento
    * @returns {Promise<Object>} Orçamento criado
    */
-  async create(quote) {
-    try {
-      // Adiciona timestamps e status padrão
-      const newQuote = {
-        ...quote,
-        status: quote.status || 'pendente',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
+  async create(quote, quoteItems) {
+    // Iniciar uma transação
+    const { data, error } = await supabase.rpc('create_quote_with_items', {
+      quote_data: quote,
+      items_data: quoteItems
+    });
 
-      const { data, error } = await supabase
-        .from('quotes')
-        .insert([newQuote])
-        .select();
-      
-      if (error) throw error;
-      return data[0];
-    } catch (error) {
+    if (error) {
       console.error('Erro ao criar orçamento:', error);
       throw error;
     }
+
+    return data;
   },
 
   /**
    * Atualiza um orçamento existente
    * @param {string} id ID do orçamento
    * @param {Object} quote Dados atualizados do orçamento
+   * @param {Array} quoteItems Itens atualizados do orçamento
    * @returns {Promise<Object>} Orçamento atualizado
    */
-  async update(id, quote) {
-    try {
-      // Atualiza o timestamp
-      const updatedQuote = {
-        ...quote,
-        updated_at: new Date().toISOString()
-      };
+  async update(id, quote, quoteItems) {
+    // Iniciar uma transação
+    const { data, error } = await supabase.rpc('update_quote_with_items', {
+      quote_id: id,
+      quote_data: quote,
+      items_data: quoteItems
+    });
 
-      const { data, error } = await supabase
-        .from('quotes')
-        .update(updatedQuote)
-        .eq('id', id)
-        .select();
-      
-      if (error) throw error;
-      return data[0];
-    } catch (error) {
+    if (error) {
       console.error(`Erro ao atualizar orçamento com ID ${id}:`, error);
       throw error;
     }
+
+    return data;
   },
 
   /**
@@ -146,30 +198,28 @@ export const quoteService = {
   },
 
   /**
-   * Busca todos os fornecedores que possuem um determinado medicamento
+   * Busca fornecedores para um medicamento
    * @param {string} medicineId ID do medicamento
-   * @returns {Promise<Array>} Lista de fornecedores com preços
+   * @returns {Promise<Array>} Lista de fornecedores
    */
   async getSuppliersForMedicine(medicineId) {
     try {
       const { data, error } = await supabase
         .from('medicine_suppliers')
-        .select(`
-          id,
-          last_quote_price,
-          last_quote_date,
-          supplier_id,
-          suppliers:supplier_id (
-            id,
-            name,
-            email,
-            phone
-          )
-        `)
+        .select(`id, last_quote_price, supplier_id, suppliers:supplier_id (id, name, email, phone)`)
         .eq('medicine_id', medicineId)
         .order('last_quote_price', { ascending: true });
       
       if (error) throw error;
+      
+      // Marcar o fornecedor com menor preço
+      if (data && data.length > 0) {
+        const lowestPriceSupplier = data[0]; // Já está ordenado pelo menor preço
+        data.forEach(supplier => {
+          supplier.isLowestPrice = supplier.id === lowestPriceSupplier.id;
+        });
+      }
+      
       return data || [];
     } catch (error) {
       console.error(`Erro ao buscar fornecedores para o medicamento com ID ${medicineId}:`, error);
@@ -178,61 +228,70 @@ export const quoteService = {
   },
 
   /**
-   * Busca orçamentos por paciente
-   * @param {string} patientName Nome do paciente
-   * @returns {Promise<Array>} Lista de orçamentos
+   * Busca pacientes que usam um determinado medicamento
+   * @param {string} medicineId ID do medicamento
+   * @returns {Promise<Array>} Lista de pacientes
    */
-  async getByPatient(patientName) {
+  async getPatientsUsingMedicine(medicineId) {
     try {
       const { data, error } = await supabase
-        .from('quotes')
+        .from('quote_items')
         .select(`
-          *,
-          medicamentos_base:medicine_id (
+          id,
+          quotes:quote_id (
             id,
-            nome_produto,
-            apresentacao,
-            laboratorio
-          ),
-          suppliers:supplier_id (
-            id,
-            name
+            patient_id,
+            patients:patient_id (
+              id,
+              name,
+              document,
+              phone,
+              email,
+              insurance_provider_id,
+              insurance_providers:insurance_provider_id (
+                id,
+                name
+              )
+            )
           )
         `)
-        .ilike('patient_name', `%${patientName}%`)
-        .order('created_at', { ascending: false });
+        .eq('medicine_id', medicineId);
       
       if (error) throw error;
-      return data || [];
+      
+      // Extrair pacientes únicos
+      const patientsMap = new Map();
+      
+      if (data) {
+        data.forEach(item => {
+          if (item.quotes && item.quotes.patients) {
+            const patient = item.quotes.patients;
+            if (!patientsMap.has(patient.id)) {
+              patientsMap.set(patient.id, patient);
+            }
+          }
+        });
+      }
+      
+      return Array.from(patientsMap.values());
     } catch (error) {
-      console.error(`Erro ao buscar orçamentos para o paciente ${patientName}:`, error);
+      console.error(`Erro ao buscar pacientes que usam o medicamento com ID ${medicineId}:`, error);
       throw error;
     }
   },
 
   /**
-   * Atualiza o status de um orçamento
-   * @param {string} id ID do orçamento
-   * @param {string} status Novo status
-   * @returns {Promise<Object>} Orçamento atualizado
+   * Calcula o preço total de um orçamento baseado nos itens
+   * @param {Array} items Itens do orçamento
+   * @returns {number} Preço total
    */
-  async updateStatus(id, status) {
-    try {
-      const { data, error } = await supabase
-        .from('quotes')
-        .update({
-          status,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', id)
-        .select();
-      
-      if (error) throw error;
-      return data[0];
-    } catch (error) {
-      console.error(`Erro ao atualizar status do orçamento com ID ${id}:`, error);
-      throw error;
-    }
+  calculateTotalPrice(items) {
+    if (!items || !items.length) return 0;
+    
+    return items.reduce((total, item) => {
+      const itemTotal = (parseFloat(item.final_price) || 0) * (parseInt(item.quantity) || 1);
+      return total + itemTotal;
+    }, 0);
   }
 };
 

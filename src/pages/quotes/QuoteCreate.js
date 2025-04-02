@@ -5,7 +5,8 @@ import {
   Grid, TextField, Box, CircularProgress,
   Snackbar, Alert, Autocomplete, InputAdornment,
   Card, CardContent, Divider, Radio, RadioGroup,
-  FormControlLabel, FormControl, FormLabel
+  FormControlLabel, FormControl, FormLabel,
+  Chip, Slider, Tooltip
 } from '@mui/material';
 import { 
   Save as SaveIcon, 
@@ -14,7 +15,8 @@ import {
   Business as SupplierIcon,
   AttachMoney as MoneyIcon,
   Person as PersonIcon,
-  HealthAndSafety as HealthIcon
+  HealthAndSafety as HealthIcon,
+  Discount as DiscountIcon
 } from '@mui/icons-material';
 import { quoteService } from '../../services/quotes/quoteService';
 import { supabase } from '../../services/supabaseClient';
@@ -43,6 +45,10 @@ const QuoteCreate = () => {
     message: '',
     severity: 'info'
   });
+  // Novo estado para a margem de lucro (padrão: 20%)
+  const [marginPercentage, setMarginPercentage] = useState(20);
+  // Novo estado para o preço calculado com a margem
+  const [calculatedPrice, setCalculatedPrice] = useState(0);
 
   useEffect(() => {
     if (selectedMedicine) {
@@ -82,6 +88,15 @@ const QuoteCreate = () => {
     try {
       setLoading(true);
       const data = await quoteService.getSuppliersForMedicine(medicineId);
+      const lowestPriceSupplier = data.reduce((lowest, current) => {
+        if (!lowest || current.last_quote_price < lowest.last_quote_price) {
+          return current;
+        }
+        return lowest;
+      }, null);
+      data.forEach((supplier) => {
+        supplier.isLowestPrice = supplier.id === lowestPriceSupplier.id;
+      });
       setSupplierOptions(data);
     } catch (error) {
       console.error('Erro ao carregar fornecedores:', error);
@@ -111,16 +126,40 @@ const QuoteCreate = () => {
     setSelectedSupplier(supplier);
     
     if (supplier) {
+      // Calcula o preço com a margem de lucro
+      const basePrice = supplier.last_quote_price || 0;
+      const priceWithMargin = basePrice * (1 + marginPercentage / 100);
+      
+      setCalculatedPrice(priceWithMargin);
+      
       setQuote(prev => ({
         ...prev,
         supplier_id: supplier.supplier_id,
-        price: supplier.last_quote_price || ''
+        price: priceWithMargin.toFixed(2).replace('.', ',')
       }));
     } else {
+      setCalculatedPrice(0);
       setQuote(prev => ({
         ...prev,
         supplier_id: '',
         price: ''
+      }));
+    }
+  };
+
+  // Nova função para atualizar a margem e recalcular o preço
+  const handleMarginChange = (event, newValue) => {
+    setMarginPercentage(newValue);
+    
+    if (selectedSupplier) {
+      const basePrice = selectedSupplier.last_quote_price || 0;
+      const priceWithMargin = basePrice * (1 + newValue / 100);
+      
+      setCalculatedPrice(priceWithMargin);
+      
+      setQuote(prev => ({
+        ...prev,
+        price: priceWithMargin.toFixed(2).replace('.', ',')
       }));
     }
   };
@@ -397,6 +436,7 @@ const QuoteCreate = () => {
                             border: selectedSupplier?.id === supplier.id ? '2px solid' : '1px solid',
                             borderColor: selectedSupplier?.id === supplier.id ? 'primary.main' : 'divider',
                             cursor: 'pointer',
+                            position: 'relative',
                             '&:hover': {
                               boxShadow: 2,
                               borderColor: 'primary.light'
@@ -404,6 +444,19 @@ const QuoteCreate = () => {
                           }}
                           onClick={() => handleSupplierSelect(supplier)}
                         >
+                          {supplier.isLowestPrice && (
+                            <Chip
+                              label="Menor Preço"
+                              color="success"
+                              size="small"
+                              sx={{
+                                position: 'absolute',
+                                top: 8,
+                                right: 8,
+                                fontWeight: 'bold'
+                              }}
+                            />
+                          )}
                           <CardContent>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <Typography variant="subtitle1" sx={{ fontWeight: 'medium' }}>
@@ -420,10 +473,22 @@ const QuoteCreate = () => {
                             
                             <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
                               <MoneyIcon color="primary" sx={{ mr: 1, fontSize: 20 }} />
-                              <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
+                              <Typography variant="body1" sx={{ 
+                                fontWeight: supplier.isLowestPrice ? 'bold' : 'medium',
+                                color: supplier.isLowestPrice ? 'success.main' : 'inherit'
+                              }}>
                                 {formatCurrency(supplier.last_quote_price)}
                               </Typography>
                             </Box>
+                            
+                            {selectedSupplier?.id === supplier.id && (
+                              <Box sx={{ mt: 1, p: 1, bgcolor: 'background.default', borderRadius: 1 }}>
+                                <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center' }}>
+                                  <DiscountIcon fontSize="small" sx={{ mr: 0.5, color: 'primary.main' }} />
+                                  Com margem ({marginPercentage}%): {formatCurrency(calculatedPrice)}
+                                </Typography>
+                              </Box>
+                            )}
                             
                             <Typography variant="caption" color="text.secondary">
                               {supplier.suppliers?.email || ''}
@@ -470,6 +535,79 @@ const QuoteCreate = () => {
                 }}
               />
             </Grid>
+            
+            <Grid item xs={12} md={6}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
+                  Margem de Lucro ({marginPercentage}%)
+                </Typography>
+                <Slider
+                  value={marginPercentage}
+                  onChange={handleMarginChange}
+                  min={0}
+                  max={100}
+                  step={1}
+                  valueLabelDisplay="auto"
+                  sx={{ width: '100%' }}
+                />
+              </Box>
+            </Grid>
+            
+            {selectedSupplier && (
+              <Grid item xs={12}>
+                <Card sx={{ borderRadius: 2, boxShadow: 2, bgcolor: 'background.paper', p: 1 }}>
+                  <CardContent>
+                    <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold', color: 'primary.main' }}>
+                      Resumo do Orçamento
+                    </Typography>
+                    
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} md={4}>
+                        <Box sx={{ p: 2, bgcolor: 'background.default', borderRadius: 2 }}>
+                          <Typography variant="subtitle2" color="text.secondary">
+                            Preço do Fornecedor
+                          </Typography>
+                          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                            {formatCurrency(selectedSupplier.last_quote_price)}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {selectedSupplier.suppliers?.name}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      
+                      <Grid item xs={12} md={4}>
+                        <Box sx={{ p: 2, bgcolor: 'background.default', borderRadius: 2 }}>
+                          <Typography variant="subtitle2" color="text.secondary">
+                            Margem de Lucro
+                          </Typography>
+                          <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'success.main' }}>
+                            {marginPercentage}%
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {formatCurrency(calculatedPrice - selectedSupplier.last_quote_price)}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      
+                      <Grid item xs={12} md={4}>
+                        <Box sx={{ p: 2, bgcolor: 'primary.main', borderRadius: 2 }}>
+                          <Typography variant="subtitle2" sx={{ color: 'white' }}>
+                            Preço Final para o Cliente
+                          </Typography>
+                          <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'white' }}>
+                            {formatCurrency(calculatedPrice)}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: 'white' }}>
+                            {quote.patient_name ? `Para: ${quote.patient_name}` : 'Valor final do orçamento'}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                    </Grid>
+                  </CardContent>
+                </Card>
+              </Grid>
+            )}
             
             <Grid item xs={12} md={6}>
               <FormControl component="fieldset">

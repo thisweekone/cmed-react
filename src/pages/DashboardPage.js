@@ -13,6 +13,9 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
+import StatsSummary from '../components/dashboard/StatsSummary';
+import { Box, Typography, Divider, Paper } from '@mui/material';
+import { BarChart as BarChartIcon } from '@mui/icons-material';
 
 // Registrar componentes do Chart.js
 ChartJS.register(
@@ -289,223 +292,197 @@ const DashboardPage = () => {
   };
 
   return (
-    <Container className="mt-4">
-      <h2>Dashboard de Reajustes CMED</h2>
-      <p className="text-muted">
-        Histórico de reajustes anuais da Câmara de Regulação do Mercado de Medicamentos
-      </p>
+    <Container fluid className="py-3">
+      {/* Seção de Estatísticas do Sistema */}
+      <StatsSummary />
+      
+      <Box sx={{ mb: 4 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="h5" sx={{ fontWeight: 'medium', display: 'flex', alignItems: 'center' }}>
+            <BarChartIcon sx={{ mr: 1 }} />
+            Histórico de Reajustes CMED
+          </Typography>
+          <Button 
+            variant="primary" 
+            onClick={() => handleOpenModal()}
+            className="rounded-pill"
+          >
+            Adicionar Reajuste
+          </Button>
+        </Box>
+        
+        <Paper sx={{ p: 3, borderRadius: 2 }}>
+          {loading ? (
+            <div className="text-center my-4">
+              <Spinner animation="border" role="status">
+                <span className="visually-hidden">Carregando...</span>
+              </Spinner>
+            </div>
+          ) : error ? (
+            <Alert variant="danger">{error}</Alert>
+          ) : (
+            <>
+              {/* Estatísticas de Reajustes */}
+              {estatisticas && (
+                <Row className="mb-4">
+                  <Col md={3}>
+                    <Card className="h-100 shadow-sm">
+                      <Card.Body className="text-center">
+                        <Card.Title>Média de Reajuste</Card.Title>
+                        <h3 className="text-primary">{estatisticas.media_reajuste?.toFixed(2)}%</h3>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                  <Col md={3}>
+                    <Card className="h-100 shadow-sm">
+                      <Card.Body className="text-center">
+                        <Card.Title>Maior Reajuste</Card.Title>
+                        <h3 className="text-danger">{estatisticas.maior_reajuste?.toFixed(2)}%</h3>
+                        <small className="text-muted">Ano: {estatisticas.ano_maior_reajuste}</small>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                  <Col md={3}>
+                    <Card className="h-100 shadow-sm">
+                      <Card.Body className="text-center">
+                        <Card.Title>Menor Reajuste</Card.Title>
+                        <h3 className="text-success">{estatisticas.menor_reajuste?.toFixed(2)}%</h3>
+                        <small className="text-muted">Ano: {estatisticas.ano_menor_reajuste}</small>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                  <Col md={3}>
+                    <Card className="h-100 shadow-sm">
+                      <Card.Body className="text-center">
+                        <Card.Title>Total de Registros</Card.Title>
+                        <h3 className="text-info">{estatisticas.total_registros}</h3>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                </Row>
+              )}
 
-      {error && (
-        <Alert variant="danger">
-          {error}
-        </Alert>
-      )}
+              {/* Gráficos */}
+              <Row className="mb-4">
+                <Col md={6}>
+                  <Card className="shadow-sm">
+                    <Card.Body>
+                      <Line data={lineChartData} options={chartOptions} />
+                    </Card.Body>
+                  </Card>
+                </Col>
+                <Col md={6}>
+                  <Card className="shadow-sm">
+                    <Card.Body>
+                      <Bar data={barChartData} options={chartOptions} />
+                    </Card.Body>
+                  </Card>
+                </Col>
+              </Row>
 
-      {loading ? (
-        <div className="text-center my-5">
-          <Spinner animation="border" role="status">
-            <span className="visually-hidden">Carregando...</span>
-          </Spinner>
-          <p className="mt-2">Carregando dados de reajustes...</p>
-        </div>
-      ) : (
-        <>
-          <Row className="mb-4">
-            <Col md={3}>
-              <Card className="h-100">
-                <Card.Body className="d-flex flex-column align-items-center justify-content-center">
-                  <Card.Title className="text-center">Média Geral</Card.Title>
-                  <h1 className="display-4 text-primary mt-3">
-                    {estatisticas?.media_geral ? formatPercentual(estatisticas.media_geral) : '-'}
-                  </h1>
-                  <div className="text-muted text-center">Média histórica de reajustes</div>
-                </Card.Body>
-              </Card>
-            </Col>
-            <Col md={3}>
-              <Card className="h-100">
-                <Card.Body className="d-flex flex-column align-items-center justify-content-center">
-                  <Card.Title className="text-center">Média 5 Anos</Card.Title>
-                  <h1 className="display-4 text-primary mt-3">
-                    {estatisticas?.media_ultimos_5_anos ? formatPercentual(estatisticas.media_ultimos_5_anos) : '-'}
-                  </h1>
-                  <div className="text-muted text-center">Média dos últimos 5 anos</div>
-                </Card.Body>
-              </Card>
-            </Col>
-            <Col md={3}>
-              <Card className="h-100">
-                <Card.Body className="d-flex flex-column align-items-center justify-content-center">
-                  <Card.Title className="text-center">Maior Reajuste</Card.Title>
-                  <h1 className="display-4 text-primary mt-3">
-                    {estatisticas?.maior_reajuste ? formatPercentual(estatisticas.maior_reajuste) : '-'}
-                  </h1>
-                  <div className="text-muted text-center">
-                    {estatisticas?.ano_maior_reajuste ? `Ano: ${estatisticas.ano_maior_reajuste}` : ''}
-                  </div>
-                </Card.Body>
-              </Card>
-            </Col>
-            <Col md={3}>
-              <Card className="h-100">
-                <Card.Body className="d-flex flex-column align-items-center justify-content-center">
-                  <Card.Title className="text-center">Menor Reajuste</Card.Title>
-                  <h1 className="display-4 text-primary mt-3">
-                    {estatisticas?.menor_reajuste ? formatPercentual(estatisticas.menor_reajuste) : '-'}
-                  </h1>
-                  <div className="text-muted text-center">
-                    {estatisticas?.ano_menor_reajuste ? `Ano: ${estatisticas.ano_menor_reajuste}` : ''}
-                  </div>
-                </Card.Body>
-              </Card>
-            </Col>
-          </Row>
-
-          <Row className="mb-4">
-            <Col md={6}>
-              <Card>
+              {/* Tabela de Reajustes */}
+              <Card className="shadow-sm">
                 <Card.Body>
-                  <Card.Title>Histórico de Reajustes (Gráfico de Linha)</Card.Title>
-                  <div style={{ height: '300px' }}>
-                    <Line data={lineChartData} options={chartOptions} />
+                  <Card.Title>Histórico de Reajustes</Card.Title>
+                  <div className="table-responsive">
+                    <Table striped hover>
+                      <thead>
+                        <tr>
+                          <th>Ano</th>
+                          <th>Percentual</th>
+                          <th>Data de Vigência</th>
+                          <th>Fonte</th>
+                          <th>IPCA do Ano</th>
+                          <th>Variação Dólar</th>
+                          <th>Observações</th>
+                          <th>Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {reajustes.map(reajuste => (
+                          <tr key={reajuste.id} className={reajuste.estimativa ? 'table-warning' : ''}>
+                            <td>{reajuste.ano}</td>
+                            <td>
+                              {reajuste.percentual}%
+                              {reajuste.estimativa && <span className="badge bg-warning text-dark ms-2">Estimativa</span>}
+                            </td>
+                            <td>{reajuste.data_vigencia || '-'}</td>
+                            <td>{reajuste.fonte || '-'}</td>
+                            <td>{reajuste.ipca_ano ? `${reajuste.ipca_ano}%` : '-'}</td>
+                            <td>{reajuste.variacao_dolar ? `${reajuste.variacao_dolar}%` : '-'}</td>
+                            <td>{reajuste.observacoes || '-'}</td>
+                            <td>
+                              <Button 
+                                variant="outline-primary" 
+                                size="sm" 
+                                className="me-1"
+                                onClick={() => handleOpenModal(reajuste)}
+                              >
+                                Editar
+                              </Button>
+                              <Button 
+                                variant="outline-danger" 
+                                size="sm"
+                                onClick={() => handleDelete(reajuste.id)}
+                              >
+                                Excluir
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </Table>
                   </div>
                 </Card.Body>
               </Card>
-            </Col>
-            <Col md={6}>
-              <Card>
-                <Card.Body>
-                  <Card.Title>Histórico de Reajustes (Gráfico de Barras)</Card.Title>
-                  <div style={{ height: '300px' }}>
-                    <Bar data={barChartData} options={chartOptions} />
-                  </div>
-                </Card.Body>
-              </Card>
-            </Col>
-          </Row>
-
-          <Card className="mb-4">
-            <Card.Body>
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                <Card.Title>Tabela de Reajustes Anuais</Card.Title>
-                <div>
-                  <Button variant="info" onClick={handleGerarEstimativa} className="me-2">
-                    Gerar Estimativa
-                  </Button>
-                  <Button variant="primary" onClick={() => handleOpenModal()}>
-                    Adicionar Reajuste
-                  </Button>
-                </div>
-              </div>
-              
-              <div className="table-responsive">
-                <Table striped bordered hover>
-                  <thead>
-                    <tr>
-                      <th>Ano</th>
-                      <th>Percentual</th>
-                      <th>Data Vigência</th>
-                      <th>Fonte</th>
-                      <th>IPCA Ano</th>
-                      <th>Var. Dólar</th>
-                      <th>Observações</th>
-                      <th>Tipo</th>
-                      <th>Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {reajustes.map((reajuste) => (
-                      <tr key={reajuste.id} className={reajuste.estimativa ? 'table-warning' : ''}>
-                        <td>{reajuste.ano}</td>
-                        <td>{formatPercentual(reajuste.percentual)}</td>
-                        <td>{reajuste.data_vigencia || '-'}</td>
-                        <td>{reajuste.fonte || '-'}</td>
-                        <td>{reajuste.ipca_ano ? formatPercentual(reajuste.ipca_ano) : '-'}</td>
-                        <td>{reajuste.variacao_dolar ? formatPercentual(reajuste.variacao_dolar) : '-'}</td>
-                        <td>{reajuste.observacoes || '-'}</td>
-                        <td>{reajuste.estimativa ? 'Estimativa' : 'Oficial'}</td>
-                        <td>
-                          <Button 
-                            variant="outline-primary" 
-                            size="sm" 
-                            className="me-1"
-                            onClick={() => handleOpenModal(reajuste)}
-                          >
-                            Editar
-                          </Button>
-                          <Button 
-                            variant="outline-danger" 
-                            size="sm"
-                            onClick={() => handleDelete(reajuste.id)}
-                          >
-                            Excluir
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
-              </div>
-            </Card.Body>
-          </Card>
-
-          {/* Legenda */}
-          <Alert variant="info">
-            <strong>Legenda:</strong>
-            <ul className="mb-0">
-              <li>Valores em <span className="text-warning">amarelo</span> são estimativas.</li>
-              <li>O IPCA (Índice de Preços ao Consumidor Amplo) é um dos principais indicadores de inflação do país.</li>
-              <li>A variação do dólar tem impacto direto no custo de insumos farmacêuticos importados.</li>
-            </ul>
-          </Alert>
-        </>
-      )}
+            </>
+          )}
+        </Paper>
+      </Box>
 
       {/* Modal para adicionar/editar reajuste */}
       <Modal show={showModal} onHide={handleCloseModal} size="lg">
         <Modal.Header closeButton>
           <Modal.Title>{editMode ? 'Editar Reajuste' : 'Adicionar Novo Reajuste'}</Modal.Title>
         </Modal.Header>
-        <Form onSubmit={handleSubmit}>
-          <Modal.Body>
+        <Modal.Body>
+          <Form onSubmit={handleSubmit}>
             <Row>
               <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label>Ano</Form.Label>
-                  <Form.Control
-                    type="number"
-                    name="ano"
-                    value={formData.ano}
-                    onChange={handleInputChange}
+                  <Form.Control 
+                    type="number" 
+                    name="ano" 
+                    value={formData.ano} 
+                    onChange={handleInputChange} 
                     required
-                    min="2000"
-                    max="2100"
                   />
                 </Form.Group>
               </Col>
               <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label>Percentual de Reajuste (%)</Form.Label>
-                  <Form.Control
-                    type="number"
-                    name="percentual"
-                    value={formData.percentual}
-                    onChange={handleInputChange}
+                  <Form.Control 
+                    type="number" 
+                    step="0.01" 
+                    name="percentual" 
+                    value={formData.percentual} 
+                    onChange={handleInputChange} 
                     required
-                    step="0.01"
                   />
                 </Form.Group>
               </Col>
             </Row>
-
+            
             <Row>
               <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label>Data de Vigência</Form.Label>
-                  <Form.Control
-                    type="date"
-                    name="data_vigencia"
-                    value={formData.data_vigencia}
+                  <Form.Control 
+                    type="date" 
+                    name="data_vigencia" 
+                    value={formData.data_vigencia} 
                     onChange={handleInputChange}
                   />
                 </Form.Group>
@@ -513,74 +490,74 @@ const DashboardPage = () => {
               <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label>Fonte</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="fonte"
-                    value={formData.fonte}
+                  <Form.Control 
+                    type="text" 
+                    name="fonte" 
+                    value={formData.fonte} 
                     onChange={handleInputChange}
-                    placeholder="Ex: Resolução CMED nº XX/20XX"
                   />
                 </Form.Group>
               </Col>
             </Row>
-
+            
             <Row>
               <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label>IPCA do Ano (%)</Form.Label>
-                  <Form.Control
-                    type="number"
-                    name="ipca_ano"
-                    value={formData.ipca_ano}
+                  <Form.Control 
+                    type="number" 
+                    step="0.01" 
+                    name="ipca_ano" 
+                    value={formData.ipca_ano} 
                     onChange={handleInputChange}
-                    step="0.01"
                   />
                 </Form.Group>
               </Col>
               <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label>Variação do Dólar (%)</Form.Label>
-                  <Form.Control
-                    type="number"
-                    name="variacao_dolar"
-                    value={formData.variacao_dolar}
+                  <Form.Control 
+                    type="number" 
+                    step="0.01" 
+                    name="variacao_dolar" 
+                    value={formData.variacao_dolar} 
                     onChange={handleInputChange}
-                    step="0.01"
                   />
                 </Form.Group>
               </Col>
             </Row>
-
+            
             <Form.Group className="mb-3">
               <Form.Label>Observações</Form.Label>
-              <Form.Control
-                as="textarea"
-                name="observacoes"
-                value={formData.observacoes}
+              <Form.Control 
+                as="textarea" 
+                rows={3} 
+                name="observacoes" 
+                value={formData.observacoes} 
                 onChange={handleInputChange}
-                rows={3}
               />
             </Form.Group>
-
+            
             <Form.Group className="mb-3">
-              <Form.Check
-                type="checkbox"
-                name="estimativa"
-                checked={formData.estimativa}
+              <Form.Check 
+                type="checkbox" 
+                label="Este é um valor estimado (não oficial)" 
+                name="estimativa" 
+                checked={formData.estimativa} 
                 onChange={handleInputChange}
-                label="Valor Estimado (não oficial)"
               />
             </Form.Group>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="secondary" onClick={handleCloseModal}>
-              Cancelar
-            </Button>
-            <Button variant="primary" type="submit">
-              {editMode ? 'Atualizar' : 'Adicionar'}
-            </Button>
-          </Modal.Footer>
-        </Form>
+            
+            <div className="d-flex justify-content-end">
+              <Button variant="secondary" className="me-2" onClick={handleCloseModal}>
+                Cancelar
+              </Button>
+              <Button variant="primary" type="submit">
+                {editMode ? 'Atualizar' : 'Adicionar'}
+              </Button>
+            </div>
+          </Form>
+        </Modal.Body>
       </Modal>
     </Container>
   );

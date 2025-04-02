@@ -121,7 +121,7 @@ const SupplierForm = ({ supplier = null }) => {
         district: cnpjData.district || '',
         city: cnpjData.city || '',
         state: cnpjData.state || '',
-        zip_code: formatCEP(cnpjData.zipCode || ''),
+        zip_code: formatCEP(cnpjData.zipcode || ''),
         main_phone: formatPhone(cnpjData.phone || ''),
         phone: formatPhone(cnpjData.phone || ''),
         main_email: cnpjData.email || '',

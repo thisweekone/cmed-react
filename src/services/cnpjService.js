@@ -91,7 +91,7 @@ const fetchCnpjData = async (cnpj) => {
       district: data.bairro,
       city: data.municipio,
       state: data.uf,
-      zipCode: data.cep,
+      zipcode: data.cep,
       email: data.email,
       phone: data.telefone,
       mainActivity: data.cnae_fiscal_descricao,

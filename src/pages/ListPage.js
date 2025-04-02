@@ -21,6 +21,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
+import { useNavigate } from 'react-router-dom';
 
 // Registrar componentes do Chart.js
 ChartJS.register(
@@ -49,6 +50,7 @@ const CHART_COLORS = [
 ];
 
 const ListPage = () => {
+  const navigate = useNavigate();
   const [medicamentos, setMedicamentos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -747,13 +749,22 @@ const ListPage = () => {
                         : '-'}
                     </td>
                     <td>
-                      <Button 
-                        variant="info" 
-                        size="sm" 
-                        onClick={() => handleShowHistory(med)}
-                      >
-                        Ver Histórico
-                      </Button>
+                      <div className="d-flex gap-1">
+                        <Button 
+                          variant="info" 
+                          size="sm" 
+                          onClick={() => handleShowHistory(med)}
+                        >
+                          Ver Histórico
+                        </Button>
+                        <Button 
+                          variant="primary" 
+                          size="sm" 
+                          onClick={() => navigate(`/medicines/${med.id}`)}
+                        >
+                          Ver Detalhes
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))

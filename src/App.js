@@ -1,5 +1,5 @@
 import React from 'react';
-import { Routes, Route, Navigate, Link, Outlet, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import { 
@@ -23,7 +23,10 @@ import {
   Building, 
   Receipt, 
   BoxArrowRight,
-  MenuButtonWide
+  MenuButtonWide,
+  People,
+  Hospital,
+  BarChartFill
 } from 'react-bootstrap-icons';
 import './styles/App.css';
 
@@ -47,6 +50,24 @@ import SupplierMedicines from './pages/suppliers/SupplierMedicines';
 import QuotesList from './pages/quotes/QuotesList';
 import QuoteCreate from './pages/quotes/QuoteCreate';
 import QuoteDetails from './pages/quotes/QuoteDetails';
+
+// Novas páginas de pacientes
+import PatientList from './pages/patients/PatientList';
+import PatientForm from './pages/patients/PatientForm';
+import PatientDetails from './pages/patients/PatientDetails';
+
+// Novas páginas de operadoras de saúde
+import InsuranceProviderList from './pages/insurance/InsuranceProviderList';
+import InsuranceProviderForm from './pages/insurance/InsuranceProviderForm';
+import InsuranceProviderDetails from './pages/insurance/InsuranceProviderDetails';
+import InsuranceProviderPatients from './pages/insurance/InsuranceProviderPatients';
+
+// Página de análise de dados
+import AnalyticsPage from './pages/analytics/AnalyticsPage';
+
+// Página de histórico de preços
+import PriceHistoryPage from './pages/medicines/PriceHistoryPage';
+import MedicineDetails from './pages/medicines/MedicineDetails';
 
 function App() {
   return (
@@ -75,6 +96,28 @@ function App() {
           <Route path="quotes" element={<ProtectedRoute><QuotesList /></ProtectedRoute>} />
           <Route path="quotes/new" element={<ProtectedRoute><QuoteCreate /></ProtectedRoute>} />
           <Route path="quotes/:id" element={<ProtectedRoute><QuoteDetails /></ProtectedRoute>} />
+          
+          {/* Novas rotas para pacientes */}
+          <Route path="patients" element={<ProtectedRoute><PatientList /></ProtectedRoute>} />
+          <Route path="patients/create" element={<ProtectedRoute><PatientForm /></ProtectedRoute>} />
+          <Route path="patients/edit/:id" element={<ProtectedRoute><PatientForm /></ProtectedRoute>} />
+          <Route path="patients/:id" element={<ProtectedRoute><PatientDetails /></ProtectedRoute>} />
+          
+          {/* Novas rotas para operadoras de saúde */}
+          <Route path="insurance" element={<ProtectedRoute><InsuranceProviderList /></ProtectedRoute>} />
+          <Route path="insurance/create" element={<ProtectedRoute><InsuranceProviderForm /></ProtectedRoute>} />
+          <Route path="insurance/edit/:id" element={<ProtectedRoute><InsuranceProviderForm /></ProtectedRoute>} />
+          <Route path="insurance/:id" element={<ProtectedRoute><InsuranceProviderDetails /></ProtectedRoute>} />
+          <Route path="insurance/:id/patients" element={<ProtectedRoute><InsuranceProviderPatients /></ProtectedRoute>} />
+          
+          {/* Rota para análise de dados */}
+          <Route path="analytics" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
+          
+          {/* Rota para histórico de preços */}
+          <Route path="medicines/:medicineId/suppliers/:supplierId/prices" element={<ProtectedRoute><PriceHistoryPage /></ProtectedRoute>} />
+          
+          {/* Rota para detalhes do medicamento */}
+          <Route path="medicines/:id" element={<ProtectedRoute><MedicineDetails /></ProtectedRoute>} />
         </Route>
         <Route path="/login" element={<LoginPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
@@ -87,6 +130,7 @@ function Layout() {
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
   const [showSidebar, setShowSidebar] = React.useState(false);
+  const location = useLocation();
 
   const handleLogout = async () => {
     try {
@@ -100,26 +144,41 @@ function Layout() {
   const handleCloseSidebar = () => setShowSidebar(false);
   const handleShowSidebar = () => setShowSidebar(true);
 
+  // Verificar se um link está ativo
+  const isActive = (path) => {
+    return location.pathname === path || location.pathname.startsWith(`${path}/`);
+  };
+
   return (
     <div className="app-container">
-      <BootstrapNavbar bg="dark" variant="dark" expand={false} className="mb-0 border-bottom">
+      <BootstrapNavbar expand={false} className="navbar-expressmed mb-0">
         <Container fluid>
           <Button 
-            variant="outline-light" 
-            className="me-2 d-lg-none" 
+            variant="link" 
+            className="me-2 d-lg-none text-white" 
             onClick={handleShowSidebar}
           >
-            <MenuButtonWide />
+            <MenuButtonWide size={24} />
           </Button>
-          <BootstrapNavbar.Brand as={Link} to="/">CMED Manager</BootstrapNavbar.Brand>
-          <Dropdown align="end">
-            <Dropdown.Toggle variant="dark" id="dropdown-user">
-              <Person className="me-1" /> {user?.email || 'Usuário'}
+          <BootstrapNavbar.Brand as={Link} to="/" className="navbar-brand-expressmed">
+            <img src="/images/expressmed-logo.svg" alt="ExpressMed Logo" className="navbar-logo" />
+            ExpressMed
+          </BootstrapNavbar.Brand>
+          <Dropdown align="end" className="user-dropdown">
+            <Dropdown.Toggle id="dropdown-user">
+              <Person size={20} className="me-2" /> {user?.email?.split('@')[0] || 'Usuário'}
             </Dropdown.Toggle>
             <Dropdown.Menu>
-              <Dropdown.Item as={Link} to="/profile">Perfil</Dropdown.Item>
+              <Dropdown.Item as={Link} to="/profile">
+                <Person size={16} className="me-2" /> Perfil
+              </Dropdown.Item>
+              <Dropdown.Item as={Link} to="/settings">
+                <Gear size={16} className="me-2" /> Configurações
+              </Dropdown.Item>
               <Dropdown.Divider />
-              <Dropdown.Item onClick={handleLogout}>Sair <BoxArrowRight className="ms-2" /></Dropdown.Item>
+              <Dropdown.Item onClick={handleLogout}>
+                <BoxArrowRight size={16} className="me-2" /> Sair
+              </Dropdown.Item>
             </Dropdown.Menu>
           </Dropdown>
         </Container>
@@ -127,41 +186,95 @@ function Layout() {
 
       <div className="d-flex flex-grow-1">
         {/* Sidebar para telas grandes */}
-        <div className="sidebar d-none d-lg-block bg-light" style={{ width: '250px', minHeight: 'calc(100vh - 56px)' }}>
-          <div className="p-3">
+        <div className="sidebar d-none d-lg-block">
+          <div className="sidebar-header">
+            <img src="/images/expressmed-logo.svg" alt="ExpressMed Logo" height="40" className="d-block mx-auto mb-2" />
+          </div>
+          <div className="px-3">
             <Nav className="flex-column">
-              <Nav.Link as={Link} to="/dashboard" className="d-flex align-items-center">
-                <House className="me-2" /> Dashboard
+              <div className="sidebar-category">Principal</div>
+              <Nav.Link 
+                as={Link} 
+                to="/dashboard" 
+                className={`d-flex align-items-center ${isActive('/dashboard') ? 'active' : ''}`}
+              >
+                <House className="nav-icon" /> Dashboard
               </Nav.Link>
-              <Nav.Link as={Link} to="/list" className="d-flex align-items-center">
-                <List className="me-2" /> Lista
+              <Nav.Link 
+                as={Link} 
+                to="/list" 
+                className={`d-flex align-items-center ${isActive('/list') ? 'active' : ''}`}
+              >
+                <List className="nav-icon" /> Medicamentos
               </Nav.Link>
-              <Nav.Link as={Link} to="/import" className="d-flex align-items-center">
-                <Upload className="me-2" /> Importar
-              </Nav.Link>
-              <Nav.Link as={Link} to="/logs" className="d-flex align-items-center">
-                <Journal className="me-2" /> Logs
-              </Nav.Link>
-              <Nav.Link as={Link} to="/settings" className="d-flex align-items-center">
-                <Gear className="me-2" /> Configurações
-              </Nav.Link>
-              <Nav.Link as={Link} to="/search" className="d-flex align-items-center">
-                <Search className="me-2" /> Buscar
-              </Nav.Link>
-              <Nav.Link as={Link} to="/substance-analysis" className="d-flex align-items-center">
-                <FileEarmarkText className="me-2" /> Análise de Substâncias
-              </Nav.Link>
-              <Nav.Link as={Link} to="/test-date" className="d-flex align-items-center">
-                <Calendar3 className="me-2" /> Test Date
+              <Nav.Link 
+                as={Link} 
+                to="/search" 
+                className={`d-flex align-items-center ${isActive('/search') ? 'active' : ''}`}
+              >
+                <Search className="nav-icon" /> Buscar
               </Nav.Link>
               
-              <hr />
-              
-              <Nav.Link as={Link} to="/suppliers" className="d-flex align-items-center">
-                <Building className="me-2" /> Fornecedores
+              <div className="sidebar-category">Gestão</div>
+              <Nav.Link 
+                as={Link} 
+                to="/patients" 
+                className={`d-flex align-items-center ${isActive('/patients') ? 'active' : ''}`}
+              >
+                <People className="nav-icon" /> Pacientes
               </Nav.Link>
-              <Nav.Link as={Link} to="/quotes" className="d-flex align-items-center">
-                <Receipt className="me-2" /> Orçamentos
+              <Nav.Link 
+                as={Link} 
+                to="/quotes" 
+                className={`d-flex align-items-center ${isActive('/quotes') ? 'active' : ''}`}
+              >
+                <Receipt className="nav-icon" /> Orçamentos
+              </Nav.Link>
+              <Nav.Link 
+                as={Link} 
+                to="/suppliers" 
+                className={`d-flex align-items-center ${isActive('/suppliers') ? 'active' : ''}`}
+              >
+                <Building className="nav-icon" /> Fornecedores
+              </Nav.Link>
+              <Nav.Link 
+                as={Link} 
+                to="/insurance" 
+                className={`d-flex align-items-center ${isActive('/insurance') ? 'active' : ''}`}
+              >
+                <Hospital className="nav-icon" /> Operadoras
+              </Nav.Link>
+              
+              <div className="sidebar-category">Análises</div>
+              <Nav.Link 
+                as={Link} 
+                to="/substance-analysis" 
+                className={`d-flex align-items-center ${isActive('/substance-analysis') ? 'active' : ''}`}
+              >
+                <FileEarmarkText className="nav-icon" /> Substâncias
+              </Nav.Link>
+              <Nav.Link 
+                as={Link} 
+                to="/analytics" 
+                className={`d-flex align-items-center ${isActive('/analytics') ? 'active' : ''}`}
+              >
+                <BarChartFill className="nav-icon" /> Dados
+              </Nav.Link>
+              
+              <div className="sidebar-category">Sistema</div>
+              <Nav.Link 
+                as={Link} 
+                to="/import" 
+                className={`d-flex align-items-center ${isActive('/import') ? 'active' : ''}`}
+              >
+                <Upload className="nav-icon" /> Importar
+              </Nav.Link>
+              <Nav.Link 
+                as={Link} 
+                to="/logs" 
+                className={`d-flex align-items-center ${isActive('/logs') ? 'active' : ''}`}
+              >
+                <Journal className="nav-icon" /> Logs
               </Nav.Link>
             </Nav>
           </div>
@@ -170,42 +283,107 @@ function Layout() {
         {/* Sidebar para telas pequenas (offcanvas) */}
         <Offcanvas show={showSidebar} onHide={handleCloseSidebar} className="sidebar-offcanvas">
           <Offcanvas.Header closeButton>
-            <Offcanvas.Title>Menu</Offcanvas.Title>
+            <Offcanvas.Title className="d-flex align-items-center">
+              <img src="/images/expressmed-logo.svg" alt="ExpressMed Logo" height="30" className="me-2" />
+              ExpressMed
+            </Offcanvas.Title>
           </Offcanvas.Header>
           <Offcanvas.Body>
             <Nav className="flex-column">
-              <Nav.Link as={Link} to="/dashboard" className="d-flex align-items-center" onClick={handleCloseSidebar}>
-                <House className="me-2" /> Dashboard
+              <div className="sidebar-category">Principal</div>
+              <Nav.Link 
+                as={Link} 
+                to="/dashboard" 
+                className={`d-flex align-items-center ${isActive('/dashboard') ? 'active' : ''}`}
+                onClick={handleCloseSidebar}
+              >
+                <House className="nav-icon" /> Dashboard
               </Nav.Link>
-              <Nav.Link as={Link} to="/list" className="d-flex align-items-center" onClick={handleCloseSidebar}>
-                <List className="me-2" /> Lista
+              <Nav.Link 
+                as={Link} 
+                to="/list" 
+                className={`d-flex align-items-center ${isActive('/list') ? 'active' : ''}`}
+                onClick={handleCloseSidebar}
+              >
+                <List className="nav-icon" /> Medicamentos
               </Nav.Link>
-              <Nav.Link as={Link} to="/import" className="d-flex align-items-center" onClick={handleCloseSidebar}>
-                <Upload className="me-2" /> Importar
-              </Nav.Link>
-              <Nav.Link as={Link} to="/logs" className="d-flex align-items-center" onClick={handleCloseSidebar}>
-                <Journal className="me-2" /> Logs
-              </Nav.Link>
-              <Nav.Link as={Link} to="/settings" className="d-flex align-items-center" onClick={handleCloseSidebar}>
-                <Gear className="me-2" /> Configurações
-              </Nav.Link>
-              <Nav.Link as={Link} to="/search" className="d-flex align-items-center" onClick={handleCloseSidebar}>
-                <Search className="me-2" /> Buscar
-              </Nav.Link>
-              <Nav.Link as={Link} to="/substance-analysis" className="d-flex align-items-center" onClick={handleCloseSidebar}>
-                <FileEarmarkText className="me-2" /> Análise de Substâncias
-              </Nav.Link>
-              <Nav.Link as={Link} to="/test-date" className="d-flex align-items-center" onClick={handleCloseSidebar}>
-                <Calendar3 className="me-2" /> Test Date
+              <Nav.Link 
+                as={Link} 
+                to="/search" 
+                className={`d-flex align-items-center ${isActive('/search') ? 'active' : ''}`}
+                onClick={handleCloseSidebar}
+              >
+                <Search className="nav-icon" /> Buscar
               </Nav.Link>
               
-              <hr />
-              
-              <Nav.Link as={Link} to="/suppliers" className="d-flex align-items-center" onClick={handleCloseSidebar}>
-                <Building className="me-2" /> Fornecedores
+              <div className="sidebar-category">Gestão</div>
+              <Nav.Link 
+                as={Link} 
+                to="/patients" 
+                className={`d-flex align-items-center ${isActive('/patients') ? 'active' : ''}`}
+                onClick={handleCloseSidebar}
+              >
+                <People className="nav-icon" /> Pacientes
               </Nav.Link>
-              <Nav.Link as={Link} to="/quotes" className="d-flex align-items-center" onClick={handleCloseSidebar}>
-                <Receipt className="me-2" /> Orçamentos
+              <Nav.Link 
+                as={Link} 
+                to="/quotes" 
+                className={`d-flex align-items-center ${isActive('/quotes') ? 'active' : ''}`}
+                onClick={handleCloseSidebar}
+              >
+                <Receipt className="nav-icon" /> Orçamentos
+              </Nav.Link>
+              <Nav.Link 
+                as={Link} 
+                to="/suppliers" 
+                className={`d-flex align-items-center ${isActive('/suppliers') ? 'active' : ''}`}
+                onClick={handleCloseSidebar}
+              >
+                <Building className="nav-icon" /> Fornecedores
+              </Nav.Link>
+              <Nav.Link 
+                as={Link} 
+                to="/insurance" 
+                className={`d-flex align-items-center ${isActive('/insurance') ? 'active' : ''}`}
+                onClick={handleCloseSidebar}
+              >
+                <Hospital className="nav-icon" /> Operadoras
+              </Nav.Link>
+              
+              <div className="sidebar-category">Análises</div>
+              <Nav.Link 
+                as={Link} 
+                to="/substance-analysis" 
+                className={`d-flex align-items-center ${isActive('/substance-analysis') ? 'active' : ''}`}
+                onClick={handleCloseSidebar}
+              >
+                <FileEarmarkText className="nav-icon" /> Substâncias
+              </Nav.Link>
+              <Nav.Link 
+                as={Link} 
+                to="/analytics" 
+                className={`d-flex align-items-center ${isActive('/analytics') ? 'active' : ''}`}
+                onClick={handleCloseSidebar}
+              >
+                <BarChartFill className="nav-icon" /> Dados
+              </Nav.Link>
+              
+              <div className="sidebar-category">Sistema</div>
+              <Nav.Link 
+                as={Link} 
+                to="/import" 
+                className={`d-flex align-items-center ${isActive('/import') ? 'active' : ''}`}
+                onClick={handleCloseSidebar}
+              >
+                <Upload className="nav-icon" /> Importar
+              </Nav.Link>
+              <Nav.Link 
+                as={Link} 
+                to="/logs" 
+                className={`d-flex align-items-center ${isActive('/logs') ? 'active' : ''}`}
+                onClick={handleCloseSidebar}
+              >
+                <Journal className="nav-icon" /> Logs
               </Nav.Link>
             </Nav>
           </Offcanvas.Body>
